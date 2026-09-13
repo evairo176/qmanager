@@ -79,3 +79,4 @@ discord-bot/*.exe
 qmanager-core
 qmanager-core-armv7.tar.gz
 qmanager-core.service
+*.deb
