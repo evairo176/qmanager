@@ -35,7 +35,6 @@ const bandwidthStatusFile = "/tmp/qmanager_bandwidth_status.json"
 
 var (
 	bandwidthWSOnce sync.Once
-	bandwidthWSStop chan struct{}
 )
 
 // Last rx/tx byte counters per interface, for rate (bps) computation.
@@ -52,7 +51,8 @@ func (s *Server) StartBandwidthWebSocket(port int) {
 		port = 8838
 	}
 	bandwidthWSOnce.Do(func() {
-		bandwidthWSStop = make(chan struct{})
+		// Stop channel reserved for future teardown (shutdown on service stop).
+		_ = make(chan struct{})
 		go s.runBandwidthWSServer(port)
 		// Mark status so the frontend sees the monitor + "websocat" as running
 		// (the Go server replaces websocat — the FE only checks the boolean).

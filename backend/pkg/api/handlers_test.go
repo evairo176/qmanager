@@ -17,8 +17,41 @@ func TestAPIWithMockClient(t *testing.T) {
 	mux := http.NewServeMux()
 	server.RegisterRoutes(mux)
 
+	// Bypass RequireAuth (qmanager_session cookie) — all protected endpoints need
+	// a valid session after the 2026-08-29 zero-auth audit. Login once with the
+	// first-boot default password ("admin") and reuse the session cookie.
+	loginRec := httptest.NewRecorder()
+	loginReq := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/auth/login.sh",
+		bytes.NewBuffer([]byte(`{"password":"admin","remember":true}`)))
+	mux.ServeHTTP(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("test setup: login failed: %d", loginRec.Code)
+	}
+	sessionCookie := ""
+	for _, c := range loginRec.Result().Cookies() {
+		if c.Name == "qmanager_session" {
+			sessionCookie = c.Value
+			break
+		}
+	}
+	if sessionCookie == "" {
+		t.Fatal("test setup: no qmanager_session cookie issued")
+	}
+
+	// authedRequest builds a request carrying the session cookie.
+	authedRequest := func(method, target string, body []byte) *http.Request {
+		var r *http.Request
+		if body == nil {
+			r = httptest.NewRequest(method, target, nil)
+		} else {
+			r = httptest.NewRequest(method, target, bytes.NewBuffer(body))
+		}
+		r.AddCookie(&http.Cookie{Name: "qmanager_session", Value: sessionCookie})
+		return r
+	}
+
 	t.Run("HandleBandsCurrent", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/bands/current.sh", nil)
+		req := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/bands/current.sh", nil)
 		rec := httptest.NewRecorder()
 
 		mux.ServeHTTP(rec, req)
@@ -44,7 +77,7 @@ func TestAPIWithMockClient(t *testing.T) {
 
 	t.Run("HandleBandsLock LTE and NR5G", func(t *testing.T) {
 		payload := []byte(`{"band_type":"lte","bands":"1:3:7"}`)
-		req := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/bands/lock.sh", bytes.NewBuffer(payload))
+		req := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/bands/lock.sh", payload)
 		rec := httptest.NewRecorder()
 
 		mux.ServeHTTP(rec, req)
@@ -54,7 +87,7 @@ func TestAPIWithMockClient(t *testing.T) {
 
 		// Invalid band type
 		badPayload := []byte(`{"band_type":"invalid","bands":"1"}`)
-		reqBad := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/bands/lock.sh", bytes.NewBuffer(badPayload))
+		reqBad := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/bands/lock.sh", badPayload)
 		recBad := httptest.NewRecorder()
 		mux.ServeHTTP(recBad, reqBad)
 		if recBad.Code != http.StatusOK {
@@ -64,7 +97,7 @@ func TestAPIWithMockClient(t *testing.T) {
 
 	t.Run("HandleTowerLock 5G NR and Unlock", func(t *testing.T) {
 		payload := []byte(`{"type":"nr_sa","action":"lock","pci":108,"arfcn":627464,"scs":30,"band":78}`)
-		req := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/tower/lock.sh", bytes.NewBuffer(payload))
+		req := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/tower/lock.sh", payload)
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 
@@ -85,7 +118,7 @@ func TestAPIWithMockClient(t *testing.T) {
 
 		// Unlock test
 		unlockPayload := []byte(`{"type":"nr_sa","action":"unlock"}`)
-		reqUnlock := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/tower/lock.sh", bytes.NewBuffer(unlockPayload))
+		reqUnlock := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/tower/lock.sh", unlockPayload)
 		recUnlock := httptest.NewRecorder()
 		mux.ServeHTTP(recUnlock, reqUnlock)
 
@@ -95,7 +128,7 @@ func TestAPIWithMockClient(t *testing.T) {
 	})
 
 	t.Run("HandleCellularSettings GET & POST", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/cellular/settings.sh", nil)
+		req := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/cellular/settings.sh", nil)
 		rec := httptest.NewRecorder()
 
 		mux.ServeHTTP(rec, req)
@@ -105,7 +138,7 @@ func TestAPIWithMockClient(t *testing.T) {
 		}
 
 		postPayload := []byte(`{"sim_slot":2,"pref_mode":"AUTO"}`)
-		reqPost := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/cellular/settings.sh", bytes.NewBuffer(postPayload))
+		reqPost := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/cellular/settings.sh", postPayload)
 		recPost := httptest.NewRecorder()
 		mux.ServeHTTP(recPost, reqPost)
 
@@ -115,7 +148,7 @@ func TestAPIWithMockClient(t *testing.T) {
 	})
 
 	t.Run("HandleIMEISettings GET & POST", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/cellular/imei.sh", nil)
+		req := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/cellular/imei.sh", nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 
@@ -124,7 +157,7 @@ func TestAPIWithMockClient(t *testing.T) {
 		}
 
 		postPayload := []byte(`{"imei":"864201050123456"}`)
-		reqPost := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/cellular/imei.sh", bytes.NewBuffer(postPayload))
+		reqPost := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/cellular/imei.sh", postPayload)
 		recPost := httptest.NewRecorder()
 		mux.ServeHTTP(recPost, reqPost)
 
@@ -134,7 +167,7 @@ func TestAPIWithMockClient(t *testing.T) {
 	})
 
 	t.Run("HandleTTLSettings GET & POST", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/network/ttl.sh", nil)
+		req := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/network/ttl.sh", nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 
@@ -143,7 +176,7 @@ func TestAPIWithMockClient(t *testing.T) {
 		}
 
 		postPayload := []byte(`{"enabled":true,"value":65}`)
-		reqPost := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/network/ttl.sh", bytes.NewBuffer(postPayload))
+		reqPost := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/network/ttl.sh", postPayload)
 		recPost := httptest.NewRecorder()
 		mux.ServeHTTP(recPost, reqPost)
 
@@ -153,7 +186,7 @@ func TestAPIWithMockClient(t *testing.T) {
 	})
 
 	t.Run("HandleAPN GET & POST", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/cellular/apn.sh", nil)
+		req := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/cellular/apn.sh", nil)
 		rec := httptest.NewRecorder()
 
 		mux.ServeHTTP(rec, req)
@@ -163,7 +196,7 @@ func TestAPIWithMockClient(t *testing.T) {
 		}
 
 		postPayload := []byte(`{"cid":1,"apn":"internet","pdp_type":"IPV4V6"}`)
-		reqPost := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/cellular/apn.sh", bytes.NewBuffer(postPayload))
+		reqPost := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/cellular/apn.sh", postPayload)
 		recPost := httptest.NewRecorder()
 		mux.ServeHTTP(recPost, reqPost)
 
@@ -173,7 +206,7 @@ func TestAPIWithMockClient(t *testing.T) {
 	})
 
 	t.Run("HandleMBN", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/cellular/mbn.sh", nil)
+		req := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/cellular/mbn.sh", nil)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 
@@ -208,7 +241,7 @@ func TestAPIWithMockClient(t *testing.T) {
 	})
 
 	t.Run("HandleSMS GET & POST", func(t *testing.T) {
-		reqGet := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/cellular/sms.sh", nil)
+		reqGet := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/cellular/sms.sh", nil)
 		recGet := httptest.NewRecorder()
 		mux.ServeHTTP(recGet, reqGet)
 
@@ -217,7 +250,7 @@ func TestAPIWithMockClient(t *testing.T) {
 		}
 
 		sendPayload := []byte(`{"action":"send","phone":"08123456789","message":"Test"}`)
-		reqSend := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/cellular/sms.sh", bytes.NewBuffer(sendPayload))
+		reqSend := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/cellular/sms.sh", sendPayload)
 		recSend := httptest.NewRecorder()
 		mux.ServeHTTP(recSend, reqSend)
 
@@ -227,7 +260,7 @@ func TestAPIWithMockClient(t *testing.T) {
 	})
 
 	t.Run("HandlePublicOverview and Logs and Reconnect", func(t *testing.T) {
-		reqOverview := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/public/overview.sh", nil)
+		reqOverview := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/public/overview.sh", nil)
 		recOverview := httptest.NewRecorder()
 		mux.ServeHTTP(recOverview, reqOverview)
 		if recOverview.Code != http.StatusOK {
@@ -235,14 +268,14 @@ func TestAPIWithMockClient(t *testing.T) {
 		}
 
 		reconnectPayload := []byte(`{"action":"reconnect"}`)
-		reqReconnect := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/system/reboot.sh", bytes.NewBuffer(reconnectPayload))
+		reqReconnect := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/system/reboot.sh", reconnectPayload)
 		recReconnect := httptest.NewRecorder()
 		mux.ServeHTTP(recReconnect, reqReconnect)
 		if recReconnect.Code != http.StatusOK {
 			t.Errorf("expected Reconnect 200, got %d", recReconnect.Code)
 		}
 
-		reqLogs := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/system/logs.sh", nil)
+		reqLogs := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/system/logs.sh", nil)
 		recLogs := httptest.NewRecorder()
 		mux.ServeHTTP(recLogs, reqLogs)
 		if recLogs.Code != http.StatusOK {
@@ -251,21 +284,21 @@ func TestAPIWithMockClient(t *testing.T) {
 	})
 
 	t.Run("HandleDataUsed and CellScanStatus and FetchData and SendCommand", func(t *testing.T) {
-		reqData := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/network/data_used.sh", nil)
+		reqData := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/network/data_used.sh", nil)
 		recData := httptest.NewRecorder()
 		mux.ServeHTTP(recData, reqData)
 		if recData.Code != http.StatusOK {
 			t.Errorf("expected DataUsed 200, got %d", recData.Code)
 		}
 
-		reqScan := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/at_cmd/cell_scan_status.sh", nil)
+		reqScan := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/at_cmd/cell_scan_status.sh", nil)
 		recScan := httptest.NewRecorder()
 		mux.ServeHTTP(recScan, reqScan)
 		if recScan.Code != http.StatusOK {
 			t.Errorf("expected CellScanStatus 200, got %d", recScan.Code)
 		}
 
-		reqFD := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/at_cmd/fetch_data.sh", nil)
+		reqFD := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/at_cmd/fetch_data.sh", nil)
 		recFD := httptest.NewRecorder()
 		mux.ServeHTTP(recFD, reqFD)
 		if recFD.Code != http.StatusOK {
@@ -273,7 +306,7 @@ func TestAPIWithMockClient(t *testing.T) {
 		}
 
 		cmdPayload := []byte(`{"command":"ATI"}`)
-		reqCmd := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/at_cmd/send_command.sh", bytes.NewBuffer(cmdPayload))
+		reqCmd := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/at_cmd/send_command.sh", cmdPayload)
 		recCmd := httptest.NewRecorder()
 		mux.ServeHTTP(recCmd, reqCmd)
 		if recCmd.Code != http.StatusOK {
@@ -282,21 +315,21 @@ func TestAPIWithMockClient(t *testing.T) {
 	})
 
 	t.Run("HandleSignalHistory PingHistory FrequencyLock", func(t *testing.T) {
-		reqSig := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/at_cmd/fetch_signal_history.sh", nil)
+		reqSig := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/at_cmd/fetch_signal_history.sh", nil)
 		recSig := httptest.NewRecorder()
 		mux.ServeHTTP(recSig, reqSig)
 		if recSig.Code != http.StatusOK {
 			t.Errorf("expected FetchSignalHistory 200, got %d", recSig.Code)
 		}
 
-		reqPing := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/at_cmd/fetch_ping_history.sh", nil)
+		reqPing := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/at_cmd/fetch_ping_history.sh", nil)
 		recPing := httptest.NewRecorder()
 		mux.ServeHTTP(recPing, reqPing)
 		if recPing.Code != http.StatusOK {
 			t.Errorf("expected FetchPingHistory 200, got %d", recPing.Code)
 		}
 
-		reqFreq := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/frequency/lock.sh", nil)
+		reqFreq := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/frequency/lock.sh", nil)
 		recFreq := httptest.NewRecorder()
 		mux.ServeHTTP(recFreq, reqFreq)
 		if recFreq.Code != http.StatusOK {
@@ -305,14 +338,14 @@ func TestAPIWithMockClient(t *testing.T) {
 	})
 
 	t.Run("HandleProfilesList and HandleScenariosList", func(t *testing.T) {
-		reqP := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/profiles/list.sh", nil)
+		reqP := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/profiles/list.sh", nil)
 		recP := httptest.NewRecorder()
 		mux.ServeHTTP(recP, reqP)
 		if recP.Code != http.StatusOK {
 			t.Errorf("expected ProfilesList 200, got %d", recP.Code)
 		}
 
-		reqS := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/scenarios/list.sh", nil)
+		reqS := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/scenarios/list.sh", nil)
 		recS := httptest.NewRecorder()
 		mux.ServeHTTP(recS, reqS)
 		if recS.Code != http.StatusOK {
@@ -320,7 +353,7 @@ func TestAPIWithMockClient(t *testing.T) {
 		}
 
 		applyPayload := []byte(`{"iccid":"89860100000000000001"}`)
-		reqApply := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/profiles/apply.sh", bytes.NewBuffer(applyPayload))
+		reqApply := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/profiles/apply.sh", applyPayload)
 		recApply := httptest.NewRecorder()
 		mux.ServeHTTP(recApply, reqApply)
 		if recApply.Code != http.StatusOK {
@@ -329,28 +362,28 @@ func TestAPIWithMockClient(t *testing.T) {
 	})
 
 	t.Run("HandleHealthCheck and LanguagePacks", func(t *testing.T) {
-		reqHC := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/system/health-check/status.sh", nil)
+		reqHC := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/system/health-check/status.sh", nil)
 		recHC := httptest.NewRecorder()
 		mux.ServeHTTP(recHC, reqHC)
 		if recHC.Code != http.StatusOK {
 			t.Errorf("expected HealthCheckStatus 200, got %d", recHC.Code)
 		}
 
-		reqHCRun := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/system/health-check/run.sh", nil)
+		reqHCRun := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/system/health-check/run.sh", nil)
 		recHCRun := httptest.NewRecorder()
 		mux.ServeHTTP(recHCRun, reqHCRun)
 		if recHCRun.Code != http.StatusOK {
 			t.Errorf("expected HealthCheckRun 200, got %d", recHCRun.Code)
 		}
 
-		reqLang := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/system/language-packs/list.sh", nil)
+		reqLang := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/system/language-packs/list.sh", nil)
 		recLang := httptest.NewRecorder()
 		mux.ServeHTTP(recLang, reqLang)
 		if recLang.Code != http.StatusOK {
 			t.Errorf("expected LanguagePacksList 200, got %d", recLang.Code)
 		}
 
-		reqLangInst := httptest.NewRequest(http.MethodPost, "/cgi-bin/quecmanager/system/language-packs/install.sh", bytes.NewBuffer([]byte(`{"code":"id"}`)))
+		reqLangInst := authedRequest(http.MethodPost, "/cgi-bin/quecmanager/system/language-packs/install.sh", []byte(`{"code":"id"}`))
 		recLangInst := httptest.NewRecorder()
 		mux.ServeHTTP(recLangInst, reqLangInst)
 		if recLangInst.Code != http.StatusOK {
@@ -359,21 +392,21 @@ func TestAPIWithMockClient(t *testing.T) {
 	})
 
 	t.Run("HandleMonitoringAlerts Watchdog Tailscale", func(t *testing.T) {
-		reqA := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/monitoring/alerts.sh", nil)
+		reqA := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/monitoring/alerts.sh", nil)
 		recA := httptest.NewRecorder()
 		mux.ServeHTTP(recA, reqA)
 		if recA.Code != http.StatusOK {
 			t.Errorf("expected Alerts 200, got %d", recA.Code)
 		}
 
-		reqW := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/monitoring/watchdog.sh", nil)
+		reqW := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/monitoring/watchdog.sh", nil)
 		recW := httptest.NewRecorder()
 		mux.ServeHTTP(recW, reqW)
 		if recW.Code != http.StatusOK {
 			t.Errorf("expected Watchdog 200, got %d", recW.Code)
 		}
 
-		reqV := httptest.NewRequest(http.MethodGet, "/cgi-bin/quecmanager/vpn/tailscale.sh", nil)
+		reqV := authedRequest(http.MethodGet, "/cgi-bin/quecmanager/vpn/tailscale.sh", nil)
 		recV := httptest.NewRecorder()
 		mux.ServeHTTP(recV, reqV)
 		if recV.Code != http.StatusOK {

@@ -125,10 +125,10 @@ func (s *Server) watchdogGet(w http.ResponseWriter) {
 	if _, err := os.Stat(qmDisabledFlag); err == nil {
 		autoDisabled = true
 	}
-	if simFailover == nil || len(simFailover) == 0 {
+	if len(simFailover) == 0 {
 		simFailover = map[string]any{"active": false}
 	}
-	if simSwap == nil || len(simSwap) == 0 {
+	if len(simSwap) == 0 {
 		simSwap = map[string]any{"detected": false}
 	}
 
@@ -369,12 +369,9 @@ func (s *Server) watchdogSave(w http.ResponseWriter, body map[string]any) {
 	_ = os.WriteFile(qmReloadFlag, []byte("reload"), 0644)
 
 	// Enable/disable the watchcat service based on new enabled state.
-	enabled := true
+	enabled := qmCfgBool(qmReadConfig()["watchcat"], "enabled", true)
 	if v, ok := updates["enabled"]; ok {
 		enabled = v == 1
-	} else {
-		cfg := qmReadConfig()["watchcat"]
-		enabled = qmCfgBool(cfg, "enabled", true)
 	}
 	if enabled {
 		_ = os.Remove(qmDisabledFlag)

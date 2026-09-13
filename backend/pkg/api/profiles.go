@@ -146,27 +146,9 @@ func (s *Server) HandleProfilesList(w http.ResponseWriter, r *http.Request) {
 	profiles := loadProfiles()
 	summaries := make([]ProfileSummaryItem, 0, len(profiles)+1)
 	// Always include the default profile first
-	summaries = append(summaries, ProfileSummaryItem{
-		ID:        defaultProfile.ID,
-		Name:      defaultProfile.Name,
-		MNO:       defaultProfile.MNO,
-		SimICCID:  defaultProfile.SimICCID,
-		CreatedAt: defaultProfile.CreatedAt,
-		UpdatedAt: defaultProfile.UpdatedAt,
-		Settings:  defaultProfile.Settings,
-		Scenario:  defaultProfile.Scenario,
-	})
+	summaries = append(summaries, ProfileSummaryItem(defaultProfile))
 	for _, p := range profiles {
-		summaries = append(summaries, ProfileSummaryItem{
-			ID:        p.ID,
-			Name:      p.Name,
-			MNO:       p.MNO,
-			SimICCID:  p.SimICCID,
-			CreatedAt: p.CreatedAt,
-			UpdatedAt: p.UpdatedAt,
-			Settings:  p.Settings,
-			Scenario:  p.Scenario,
-		})
+		summaries = append(summaries, ProfileSummaryItem(p))
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{

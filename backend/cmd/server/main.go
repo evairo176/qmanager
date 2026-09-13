@@ -55,14 +55,14 @@ func main() {
 			map[bool]string{true: "HARD REBOOT", false: "soft radio reset (AT+CFUN=0/1)"}[isHard])
 		daemon.RecordWatchcatEvent(isHard, fmt.Sprintf("%d consecutive ping failures", fails))
 		if isHard {
-			exec.Command("/bin/sh", "-c", "sync; (sleep 2; busybox reboot -f) >/dev/null 2>&1 &").Start()
+			_ = exec.Command("/bin/sh", "-c", "sync; (sleep 2; busybox reboot -f) >/dev/null 2>&1 &").Start()
 			return
 		}
 		// SOFT: AT+CFUN=0 then AT+CFUN=1 with a short delay — re-registers the
 		// radio and typically regains IP without a full reboot.
 		if _, err := atClient.Exec("AT+CFUN=0"); err == nil {
 			time.Sleep(3 * time.Second)
-			atClient.Exec("AT+CFUN=1")
+			_, _ = atClient.Exec("AT+CFUN=1")
 			time.Sleep(5 * time.Second)
 		}
 	})
