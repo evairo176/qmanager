@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [v0.2.4-stable] - 2026-09-11
+
+**🎉 First stable release of QManager Go Edition.** Versi ini adalah yang sedang
+berjalan di Quectel RM500Q-GL (dashboard 192.168.225.1). Semua fitur di bawah
+digabung dari v0.2.1-go → v0.2.4-beta.1 dan diverifikasi stabil di produksi.
+
+### 🚀 Penggabungan Fitur (v0.2.1 → v0.2.4)
+- **100% Go Native API Handlers** (`pkg/api/`): semua CGI handler shell legacy
+  diganti handler Go in-memory (ethernet, frequency lock, tower lock, speedtest,
+  apn, imei, network priority, fplmn, known sims, pending reboot, bandwidth).
+- **Go Poller Engine** (`pkg/daemon/poller.go`): parser 5G NR5G-SA & NSA
+  (`+QENG="servingcell"` → ARFCN, 5G PCI, band N12/N28/N41/N77/N78, RSRP, RSRQ, SINR).
+- **Universal Modem Auto-Discovery**: model, firmware, IMEI, ICCID, IMSI, operator,
+  WAN IPv4/IPv6 via 3GPP/Quectel AT.
+- **SSE Real-Time Telemetry** (`pkg/api/sse.go`): push stream status tanpa polling.
+- **Speedtest Engine native Go** (latency, download, upload) + **nftables DPI manager**.
+- **Dual-SIM/eSIM manager** (`pkg/modem/sim.go`): slot query, switch, ICCID.
+- **Watchdog & SIM Failover**: recovery lifecycle log ke network feed, tier 1-4,
+  backup SIM slot, max reboots/hour.
+- **Design System Overhaul**: glass surfaces, gradient buttons, glow cards,
+  sidebar active pills, cockpit gauges, Animated Gear, Realtime toggle (1 toggle
+  stop semua polling - hemat CPU pada modem 1-core).
+- **Bandwidth**: WebSocket go-native (`ws://host:8838/`) menggantikan websocat.
+- **SMS Center**: native `sms_tool` backend + normalize shape, fix crash.
+- **IPA offload, custom DNS, MTU, ping profile, adaptive polling, hostname**
+  (baca dari qmanager.conf `[settings].hostname`, bukan os.Hostname "sdxprairie").
+- **Config Backup/Restore** (`config-backup-sections.sh`), **Python diagnostic
+  toolkit** (`tests/py_modem/`, 23 tools).
+
+### 📦 Artifacts
+`qmanager-core-armv7.tar.gz` (RM500Q-GL / SDX55-65) · `qmanager-core-arm64.tar.gz`
+(SDX72/75, RPi) · `qmanager-core-amd64.tar.gz` (PC/router x86) — workflow
+`.github/workflows/release.yml` build otomatis saat tag `v*`.
+
+---
+
 ## [v0.2.4-beta.1] - 2026-08-27
 
 ### 🚀 Added & Enhanced
@@ -23,7 +59,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [v0.2.3-go] - 2026-08-25
+## [v0.2.4-stable] - 2026-08-25
 
 ### 🚀 Added & Enhanced
 - **AT Serial Port Auto-Discovery** (`pkg/at/client.go`): Dynamic auto-scan of candidate serial ports (`/dev/smd11` → `/dev/smd7` → `/dev/ttyUSB2` → `/dev/ttyUSB3` → `/dev/ttyUSB0` → `/dev/ttyACM0` → `/dev/cdc-wdm0`) for non-SoC modem host routers.

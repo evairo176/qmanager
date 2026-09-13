@@ -1,6 +1,6 @@
 {
   "name": "qmanager",
-  "version": "v0.2.3-go",
+  "version": "v0.2.4-stable",
   "private": true,
   "scripts": {
     "dev": "bun --bun next dev",

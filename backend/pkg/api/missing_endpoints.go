@@ -108,7 +108,7 @@ func readQmJSON(path string) map[string]any {
 }
 
 func deviceMetaFromStatus() (model, firmware, imei, qmVersion string) {
-	model, firmware, imei, qmVersion = "QManager", "-", "-", "v0.2.3-go"
+	model, firmware, imei, qmVersion = "QManager", "-", "-", "v0.2.4-stable"
 	if data, err := os.ReadFile("/tmp/qmanager_status.json"); err == nil {
 		var status map[string]any
 		if json.Unmarshal(data, &status) == nil {

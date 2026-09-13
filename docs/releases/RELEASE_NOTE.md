@@ -1,6 +1,10 @@
-# 🚀 QManager Go Edition v0.2.4-beta.1
+# 🚀 QManager Go Edition v0.2.4-stable
 
-QManager Go Edition v0.2.4-beta.1 brings 100% Go Native API coverage across all WebUI modules, native 5G NR5G-SA (Standalone) & NR5G-NSA signal parsing, universal modem hardware auto-discovery, and a dedicated Python diagnostic toolkit.
+**First stable release.** QManager Go Edition v0.2.4-stable is the production build
+running on the Quectel RM500Q-GL (dashboard 192.168.225.1). It brings 100% Go
+Native API coverage across all WebUI modules, native 5G NR5G-SA (Standalone) &
+NR5G-NSA signal parsing, universal modem hardware auto-discovery, and a dedicated
+Python diagnostic toolkit.
 
 ## ✨ New Features & Enhancements
 
