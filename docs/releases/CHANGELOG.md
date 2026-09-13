@@ -6,7 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [v0.2.4-stable] - 2026-09-11
+## Versioning Scheme
+
+Semver: **MAJOR.MINOR.PATCH** (`vX.Y.Z`). Rule update dari stable:
+- 🔧 Perbaikan bug / hotfix → **v1.0.1** (patch naik)
+- ✨ Fitur baru non-breaking → **v1.1.0** (minor naik)
+- 🚨 Breaking change / major overhaul → **v2.0.0** (major naik)
+
+Tag dipakai `v` + versi (contoh `v1.0.0`), workflow `.github/workflows/release.yml`
+auto-build binary armv7/arm64/amd64 saat tag `v*` di-push.
+
+---
+
+## [v1.0.0] - 2026-09-11
 
 **🎉 First stable release of QManager Go Edition.** Versi ini adalah yang sedang
 berjalan di Quectel RM500Q-GL (dashboard 192.168.225.1). Semua fitur di bawah
@@ -59,7 +71,7 @@ digabung dari v0.2.1-go → v0.2.4-beta.1 dan diverifikasi stabil di produksi.
 
 ---
 
-## [v0.2.4-stable] - 2026-08-25
+## [v1.0.0] - 2026-08-25
 
 ### 🚀 Added & Enhanced
 - **AT Serial Port Auto-Discovery** (`pkg/at/client.go`): Dynamic auto-scan of candidate serial ports (`/dev/smd11` → `/dev/smd7` → `/dev/ttyUSB2` → `/dev/ttyUSB3` → `/dev/ttyUSB0` → `/dev/ttyACM0` → `/dev/cdc-wdm0`) for non-SoC modem host routers.
