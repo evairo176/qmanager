@@ -433,7 +433,7 @@ func (s *Server) HandleAboutDevice(w http.ResponseWriter, r *http.Request) {
 		"system": map[string]interface{}{
 			"hostname":         hostname,
 			"kernel_version":   "Linux Host",
-			"openwrt_version":  "v1.0.0 Engine",
+			"openwrt_version":  "v1.0.1 Engine",
 			"qmanager_version": qmanagerVersion,
 		},
 	})
@@ -788,8 +788,8 @@ func (s *Server) HandleSoftwareUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":          true,
-		"current_version":  "v1.0.0",
-		"latest_version":   "v1.0.0",
+		"current_version":  "v1.0.1",
+		"latest_version":   "v1.0.1",
 		"update_available": false,
 	})
 }
