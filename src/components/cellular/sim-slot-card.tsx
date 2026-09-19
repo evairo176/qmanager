@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { RefreshCw, ArrowRightLeft, CreditCard, Cpu } from "lucide-react";
 import { authFetch } from "@/lib/auth-fetch";
 import { toast } from "sonner";
+import { SensitiveValue } from "@/components/ui/sensitive-value";
 
 export interface SIMSlotInfo {
   active_slot: number;
@@ -108,7 +109,7 @@ export function SIMSlotCard() {
             </div>
 
             <div className="text-xs text-muted-foreground font-mono truncate">
-              ICCID: {info?.active_slot === 1 ? info.iccid || "Detected" : "Inactive"}
+              ICCID: {info?.active_slot === 1 ? <SensitiveValue value={info.iccid || "Detected"} /> : "Inactive"}
             </div>
 
             <Button
@@ -144,7 +145,7 @@ export function SIMSlotCard() {
             </div>
 
             <div className="text-xs text-muted-foreground font-mono truncate">
-              ICCID: {info?.active_slot === 2 ? info.iccid || "Detected" : "Inactive"}
+              ICCID: {info?.active_slot === 2 ? <SensitiveValue value={info.iccid || "Detected"} /> : "Inactive"}
             </div>
 
             <Button

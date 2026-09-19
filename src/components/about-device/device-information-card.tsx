@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
 import type { AboutDeviceData } from "@/types/about-device";
+import { SensitiveValue } from "@/components/ui/sensitive-value";
 
 // =============================================================================
 // DeviceInformationCard — Modem image + device identity & network addresses
@@ -25,6 +26,8 @@ interface DataRow {
   label: string;
   value: string;
   mono?: boolean;
+  /** Nilai sensitif (IMEI, dll) - di-blur & di-mask dengan SensitiveValue. */
+  sensitive?: boolean;
 }
 
 interface DataSection {
@@ -48,7 +51,7 @@ function buildSections(data: AboutDeviceData, t: TFunction): DataSection[] {
         { label: t("about_device.device_info.fields.model_label"), value: data.device.model },
         { label: t("about_device.device_info.fields.firmware_label"), value: data.device.firmware },
         { label: t("about_device.device_info.fields.build_date_label"), value: data.device.build_date },
-        { label: t("about_device.device_info.fields.imei_label"), value: data.device.imei, mono: true },
+        { label: t("about_device.device_info.fields.imei_label"), value: data.device.imei, mono: true, sensitive: true },
         {
           label: t("about_device.device_info.fields.lte_3gpp_release_label"),
           value: data.threeGppRelease.lte,
@@ -194,9 +197,13 @@ const DeviceInformationCard = ({
                         className={`text-sm font-semibold min-w-0 truncate ml-4 ${
                           row.mono ? "tabular-nums" : ""
                         }`}
-                        title={row.value || undefined}
+                        title={row.sensitive ? undefined : row.value || undefined}
                       >
-                        {row.value || "-"}
+                        {row.sensitive ? (
+                          <SensitiveValue value={row.value || "-"} />
+                        ) : (
+                          row.value || "-"
+                        )}
                       </dd>
                     </motion.div>
                   ))}
