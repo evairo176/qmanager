@@ -17,8 +17,16 @@
 ---
 
 <div align="center">
-  <img src="docs/screenshots/dashboard.png" alt="QManager Dashboard Screenshot" width="900" />
+  <img src="docs/screenshots/dashboard.png" alt="QManager Dashboard" width="900" />
 </div>
+
+<details>
+<summary><b>Lihat semua halaman (Cellular, SMS, Band Locking, Network, Monitoring, Settings)</b></summary>
+<br/>
+<div align="center">
+  <img src="docs/screenshots/all-pages.png" alt="Semua halaman QManager" width="900" />
+</div>
+</details>
 
 ---
 
