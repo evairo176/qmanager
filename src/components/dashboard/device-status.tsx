@@ -49,7 +49,7 @@ const DeviceStatusComponent = ({
   isLoading,
 }: DeviceStatusComponentProps) => {
   const { t } = useTranslation("dashboard");
-  const [hidePrivate, setHidePrivate] = useState(false);
+  const [hidePrivate, setHidePrivate] = useState(true);
 
   const rows = [
     { label: t("device_status.firmware_version"), value: data?.firmware || "-" },
