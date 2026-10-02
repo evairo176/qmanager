@@ -32,45 +32,81 @@
 
 ## ⚡ Installation Guide
 
-This project is **deployed onto the modem itself** (Quectel RM500Q / RM520N /
-RM551E class devices running Linux). There is no separate server to install -
-you build the binary on your workstation, then upload it to the modem over
-SSH and let systemd run it.
+QManager Go Edition jalan **di dalam modem** (Quectel RM500Q / RM520N / RM551E class
+yang pakai Linux). Kamu tidak perlu server terpisah - yang kamu lakukan cuma:
+**build/download binarynya di komputer kamu, kirim ke modem lewat SSH, lalu
+biarkan systemd yang menjalankannya**.
 
-> **What this guide is NOT**: this is not a generic "download a binary and
-> run it on your PC" tutorial. The steps below match the real (tested)
-> installation flow: build from source with `build-go.sh`, push the binary to
-> `/usrdata/qmanager/qmanager-core`, and manage it with
-> `qmanager-core.service` (systemd).
+> **Punya bingung dengan istilah teknis?** Intinya cuma 4 kata: **Binary** (file
+> programnya), **upload** (kirim ke modem), **unit service** (file perintah biar
+> jalan otomatis), **restart** (hidupkan ulang).
+
+### 🚀 TL;DR (jalan cepat, 3 perintah)
+
+Kalau kamu sudah pernah install sebelumnya, ini saja yang kamu butuhkan:
+
+```sh
+# 1. Build
+cd QManager-GO && ./build-go.sh
+
+# 2. Upload binary ke modem (base64 pipe, karena modem tidak punya scp)
+base64 backend/dist/qmanager-core-armv7 | ssh root@192.168.225.1 'base64 -d > /usrdata/qmanager/qmanager-core.new && chmod +x /usrdata/qmanager/qmanager-core.new && mv /usrdata/qmanager/qmanager-core.new /usrdata/qmanager/qmanager-core'
+
+# 3. Restart service
+ssh root@192.168.225.1 "systemctl restart qmanager-core"
+```
+
+Selesai. Buka `https://192.168.225.1` di browser.
 
 ---
 
-### 0. Requirements
+### 📁 File ditaruh di mana? (tabel penting!)
 
-| What | Where | Notes |
+Yang paling sering bikin bingung: **setiap file punya tempatnya sendiri**. Ini
+tabel ringkasnya:
+
+| File / Folder | Ditaruh di modem | Fungsi |
 |---|---|---|
-| Target modem | LAN IP `192.168.225.1`, SSH `root` (pass: `admin321`) | Quectel RM500Q-GL (armv7) |
-| Go toolchain | Workstation | 1.24+ (`GOTOOLCHAIN=local`) |
-| Bun | Workstation (optional) | Only needed when you rebuild the frontend |
-| SCP/SFTP | **NOT required** | The modem has no `scp`/`sftp` - use the base64 pipe below |
+| `qmanager-core` (binary Go) | `/usrdata/qmanager/qmanager-core` | Program utamanya (API + web) |
+| `qmanager-core.service` (unit systemd) | **`/lib/systemd/system/`** | Perintah autostart (JANGAN taruh di `/etc` - lihat catatan bawah) |
+| `qmanager_poller`, `qmanager_watchcat`, dll (daemons) | `/usr/bin/` | Proses bantu (monitor, ping, event) |
+| `qmanager.conf`, `auth.json` (konfigurasi) | `/etc/qmanager/` | Setting + password |
+| Folder `out/` (frontend, opsional) | `/usrdata/qmanager/web` | Kalau cuma update tampilan web |
+
+> ⚠️ **Kenapa unit service harus di `/lib/systemd/system/`, bukan `/etc/systemd/system/`?**
+> Di modem Quectel, folder `/etc` dipasang belakangan saat boot (volume `ubi2_0`),
+> jadi systemd **diam-diam melewati** unit yang ada di `/etc` waktu cold boot.
+> Folder `/lib` diproses lebih awal - makanya unit harus di sana.
 
 ---
 
-### 1. Build
+### 0. Yang Kamu Butuhkan
+
+| Kebutuhan | Tempat | Catatan |
+|---|---|---|
+| Modem target | `192.168.225.1` (SSH root, pass: `admin321`) | Contoh: Quectel RM500Q-GL (armv7) |
+| Go toolchain | Komputer kamu | Versi 1.24+ (`GOTOOLCHAIN=local`) |
+| Bun | Komputer kamu (opsional) | Hanya kalau rebuild frontend |
+| SCP/SFTP | **Tidak dibutuhkan** | Modem cuma punya busybox - pakai base64 pipe |
+
+---
+
+### 1. Dapatkan Binarynya (pilih salah satu)
+
+**Pilihan A - Build dari source (disarankan):**
 
 ```sh
 cd QManager-GO
 ./build-go.sh
 ```
 
-`build-go.sh` does two things:
-1. Builds the Next.js frontend and embeds it into the Go binary
-   (`//go:embed all:out`).
-2. Cross-compiles `qmanager-core` for your target architecture.
+Script ini melakukan 2 hal:
+1. Build frontend Next.js dan menanamkannya ke dalam binary (`//go:embed all:out`)
+2. Cross-compile binary `qmanager-core` untuk arsitektur modem kamu
 
-Output: `backend/dist/qmanager-core-<arch>` (e.g. `qmanager-core-armv7`).
+Hasilnya ada di: `backend/dist/qmanager-core-armv7`
 
-Manual alternative (same result):
+**Pilihan B - Build manual (kalau mau kontrol penuh):**
 
 ```sh
 cd backend
@@ -79,32 +115,36 @@ GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 \
   go build -ldflags="-s -w" -o qmanager-core-armv7 ./cmd/server
 ```
 
+**Pilihan C - Pakai release dari GitHub:** download asset
+`qmanager-core-armv7` dari halaman **Releases** repo ini, lalu lanjut ke langkah 2.
+
 ---
 
-### 2. Deploy to the Modem
+### 2. Upload ke Modem
 
-#### Option A (recommended): `deploy.sh` from your workstation
+#### Cara A (disarankan): pakai `deploy.sh`
 
 ```sh
-# Deploy over SSH to the default modem IP
+# Deploy ke IP modem default
 ./deploy.sh
 
-# Or to a custom IP
+# Atau ke IP lain
 ./deploy.sh 192.168.1.1
 
-# Or over ADB (if SSH is not available)
+# Atau lewat ADB (kalau SSH tidak bisa)
 ./deploy.sh adb
 ```
 
-Notes:
-- The script detects the target architecture and pushes the matching binary.
-- It creates the systemd unit in **`/lib/systemd/system/`** (NOT `/etc` - see the
-  boot quirk below) and enables autostart.
-- On modems **without** `scp`/`sftp` the script's SCP step fails - use Option B.
+Catatan:
+- Script ini otomatis mendeteksi arsitektur dan mengirim binary yang cocok.
+- Dia juga **membuat unit systemd di `/lib/systemd/system/`** (bukan `/etc`) dan
+  menyalakan autostart.
+- Kalau modem kamu **tidak punya scp/sftp** (contoh: RM500Q), langkah SCP-nya
+  akan gagal - pakai Cara B di bawah.
 
-#### Option B (manual, works on modems without SCP - tested on RM500Q)
+#### Cara B (manual, wajib untuk modem tanpa SCP - sudah diuji di RM500Q)
 
-Upload the binary over SSH using a base64 pipe (the modem has busybox only):
+Upload binary lewat base64 pipe (modem cuma punya busybox):
 
 ```sh
 BIN=backend/dist/qmanager-core-armv7
@@ -116,21 +156,17 @@ base64 "$BIN" | ssh "$TARGET" 'base64 -d > /usrdata/qmanager/qmanager-core.new \
   && systemctl restart qmanager-core'
 ```
 
-This keeps the previous binary at `/usrdata/qmanager/qmanager-core` until the
-new file is fully transferred, then swaps it atomically (`mv`).
-
-Install path summary:
-- **Binary**: `/usrdata/qmanager/qmanager-core`
-- **Config dir**: `/etc/qmanager/` (`qmanager.conf` JSON + `auth.json`
-  sha256(salt+password))
-- **TLS certs**: auto-generated by tlsgen into `/etc/qmanager/tls/`
-- **Web assets (optional)**: `/usrdata/qmanager/web` when `WEB_ROOT` is set
+Kenapa pakai `.new` dulu? Supaya kalau transfer putus di tengah, binary lama di
+`/usrdata/qmanager/qmanager-core` tetap utuh. Setelah file lengkap baru di-tukar
+dengan `mv` (atomik).
 
 ---
 
-### 3. Systemd Autostart
+### 3. Autostart dengan systemd
 
-`deploy.sh` writes the unit for you. Manual reference:
+`deploy.sh` sudah menuliskan unitnya untuk kamu. Kalau kamu install manual
+(Cara B), ini referensinya - **file ini wajib ada** di
+`/lib/systemd/system/qmanager-core.service`:
 
 ```ini
 [Unit]
@@ -139,7 +175,7 @@ After=basic.target
 
 [Service]
 Type=simple
-ExecStart=/lib/qmanager-start.sh      # wrapper on rootfs, NOT the binary path
+ExecStart=/lib/qmanager-start.sh      # wrapper di rootfs, BUKAN path binary
 Restart=always
 RestartSec=2
 KillMode=process
@@ -152,43 +188,42 @@ Environment=WEB_ROOT=/usrdata/qmanager/web
 WantedBy=multi-user.target
 ```
 
-> ⚠️ **Quectel boot quirks (do not skip):**
-> - **Unit must live in `/lib/systemd/system/`, not `/etc`** - on Quectel the
->   `/etc` path lives on the late-mounted `ubi2_0` volume, so systemd silently
->   skips custom units there during cold boot. `/lib` is processed.
-> - **`ExecStart` must point at a rootfs wrapper** (e.g.
->   `/lib/qmanager-start.sh`) - pointing directly at
->   `/usrdata/qmanager/qmanager-core` makes systemd derive
->   `RequiresMountsFor=/usrdata/qmanager`, which cannot resolve at boot and the
->   unit is skipped.
-> - **Do NOT use `After=network-online.target`** - it stays inactive during
->   cold boot on Quectel; `After=basic.target` starts the service immediately.
-> - **`systemctl is-enabled` lies on Quectel** - it only reads `/etc` state.
->   Verify autostart with `ls /lib/systemd/system/multi-user.target.wants/`
->   + a reboot test, not `is-enabled`.
+> ⚠️ **Quectel punya 3 keanehan boot yang wajib diingat:**
+> 1. **Unit harus di `/lib/systemd/system/`** - di `/etc` unit di-skip saat cold boot.
+> 2. **`ExecStart` harus menunjuk wrapper rootfs** (contoh `/lib/qmanager-start.sh`),
+>    bukan langsung ke `/usrdata/qmanager/qmanager-core` - kalau langsung, systemd
+>    membuat `RequiresMountsFor=/usrdata/qmanager` yang tidak bisa di-resolve saat
+>    boot, unit jadi di-skip.
+> 3. **Jangan pakai `After=network-online.target`** - di Quectel target ini tetap
+>    inactive saat cold boot. `After=basic.target` langsung menjalankan service.
 
-Enable & restart:
+Memasang & menyalakan:
 
 ```sh
 ssh root@192.168.225.1 \
-  "systemctl daemon-reload && systemctl restart qmanager-core"
+  "systemctl daemon-reload && systemctl enable qmanager-core && systemctl restart qmanager-core"
 ```
 
-Verify:
+Verifikasi:
 
 ```sh
 curl -sk -o /dev/null -w '%{http_code}\n' https://127.0.0.1/   # -> 200
 ```
 
+> ⚠️ `systemctl is-enabled` **sering berbohong** di Quectel (cuma baca state di
+> `/etc`). Cara verifikasi autostart yang benar:
+> `ls /lib/systemd/system/multi-user.target.wants/` + tes reboot, bukan
+> `is-enabled`.
+
 ---
 
-### 4. Updating Only the Frontend (no Go rebuild needed)
+### 4. Update Tanpa Rebuild (frontend saja)
 
-The service is configured with `WEB_ROOT=/usrdata/qmanager/web`, so the
-frontend is served from disk. To update the UI without rebuilding Go:
+Service dikonfigurasi dengan `WEB_ROOT=/usrdata/qmanager/web`, jadi frontend
+dibaca dari disk. Kalau cuma mau update tampilan web tanpa rebuild Go:
 
 ```sh
-bun --bun next build   # run from repo root; output goes to out/
+bun --bun next build   # jalan dari root repo; hasilnya di out/
 tar -C out -cf - . | base64 | ssh root@192.168.225.1 \\
   'base64 -d | tar -C /usrdata/qmanager/web -xf -'
 ssh root@192.168.225.1 "systemctl restart qmanager-core"
@@ -196,21 +231,18 @@ ssh root@192.168.225.1 "systemctl restart qmanager-core"
 
 ---
 
-### 5. Post-Install Checklist & Warnings
+### 5. Checklist Setelah Install
 
-- [ ] `https://192.168.225.1` loads the dashboard (login = admin)
-- [ ] `qmanager-core` is active (`systemctl is-active qmanager-core` → active)
-- [ ] **NEVER start `qmanager-scheduled-reboot.service` manually** - it reboots
-      the modem instantly. Keep the timer disabled.
-- [ ] If you migrated from the legacy QManager: lighttpd must stay masked and
-      the iptables `DROP` rules for port 80/443 must be removed
-      (`iptables -D INPUT N`) or the dashboard is unreachable over IPv4.
-- [ ] After a modem reboot, `/tmp` state files (events, ping history) are
-      regenerated by the shell poller - empty responses right after reboot are
-      normal.
+- [ ] `https://192.168.225.1` bisa dibuka (login: `admin`)
+- [ ] `systemctl is-active qmanager-core` → `active`
+- [ ] **JANGAN pernah menjalankan `qmanager-scheduled-reboot.service` manual** -
+      modem langsung reboot. Timer-nya biarkan disabled.
+- [ ] Kalau migrasi dari QManager lama: `lighttpd` harus tetap di-mask dan rule
+      iptables `DROP` untuk port 80/443 harus dihapus (`iptables -D INPUT N`),
+      kalau tidak dashboard tidak bisa diakses via IPv4.
+- [ ] Setelah modem reboot, file state di `/tmp` (events, ping history) dibuat
+      ulang oleh poller - response kosong sesaat setelah reboot itu normal.
 
-If you are migrating from legacy QManager / SimpleAdmin / QuecManager, follow
-the cleanup section below **after** QManager-Go is already running.
 
 ## 🔄 Removing Legacy QManager / SimpleAdmin / QuecManager (Full Migration to QManager-Go)
 
