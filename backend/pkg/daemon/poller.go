@@ -778,36 +778,39 @@ func parseQuectelQENG(resp string, netType, serviceStatus, carrier, lteBand *str
 				}
 			} else if rat == "LTE" || strings.Contains(line, `"LTE"`) {
 				*netType = "LTE"
-				if len(parts) >= 16 {
+				// Format INLINE (firmware lain): +QENG: "servingcell","CONNECTED","LTE","FDD",
+				// <cell>,<tac>,<pci>,<earfcn>,<band>,<ul_bw>,<dl_bw>,<rsrp>,<rsrq>,<rssi>,<sinr>
+				// Index: [4]cell [5]tac [6]pci [7]earfcn [8]band [9]ul [10]dl [11]rsrp [12]rsrq [13]rssi [14]sinr
+				if len(parts) >= 15 {
 					if hexVal, err := strconv.ParseInt(strings.Trim(parts[4], `"`), 16, 64); err == nil && hexVal > 0 {
 						v := int(hexVal)
 						*cellId = &v
 					}
-					if val, err := strconv.Atoi(parts[7]); err == nil {
+					if val, err := strconv.Atoi(parts[6]); err == nil {
 						*pci = &val
 					}
-					if val, err := strconv.Atoi(parts[8]); err == nil {
+					if val, err := strconv.Atoi(parts[7]); err == nil {
 						*earfcn = &val
 					}
-					if bandNum, err := strconv.Atoi(parts[9]); err == nil {
+					if bandNum, err := strconv.Atoi(parts[8]); err == nil {
 						*lteBand = fmt.Sprintf("B%d", bandNum)
 					} else {
-						*lteBand = strings.Trim(parts[9], `"`)
+						*lteBand = strings.Trim(parts[8], `"`)
 					}
-					if hexVal, err := strconv.ParseInt(strings.Trim(parts[10], `"`), 16, 64); err == nil && hexVal > 0 {
+					if hexVal, err := strconv.ParseInt(strings.Trim(parts[5], `"`), 16, 64); err == nil && hexVal > 0 {
 						v := int(hexVal)
 						*tac = &v
 					}
-					if val, err := strconv.Atoi(parts[12]); err == nil {
+					if val, err := strconv.Atoi(parts[11]); err == nil {
 						*rsrp = &val
 					}
-					if val, err := strconv.Atoi(parts[13]); err == nil {
+					if val, err := strconv.Atoi(parts[12]); err == nil {
 						*rsrq = &val
 					}
-					if val, err := strconv.Atoi(parts[14]); err == nil {
+					if val, err := strconv.Atoi(parts[13]); err == nil {
 						*rssi = &val
 					}
-					if val, err := strconv.Atoi(parts[15]); err == nil {
+					if val, err := strconv.Atoi(parts[14]); err == nil {
 						*sinr = &val
 					}
 				}

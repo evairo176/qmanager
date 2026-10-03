@@ -93,6 +93,7 @@
     "band": "Band",
     "earfcn": "EARFCN",
     "arfcn": "ARFCN",
+    "frequency": "Frequency (DL)",
     "pci": "PCI",
     "rsrp": "RSRP",
     "rsrq": "RSRQ",

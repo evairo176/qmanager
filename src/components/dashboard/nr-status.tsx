@@ -8,6 +8,7 @@ import {
   RSRQ_THRESHOLDS,
   SINR_THRESHOLDS,
 } from "@/types/modem-status";
+import { getDLFrequency, formatFrequency } from "@/lib/earfcn";
 
 interface NrStatusComponentProps {
   data: NrStatus | null;
@@ -25,6 +26,13 @@ const NrStatusComponent = ({ data, isLoading }: NrStatusComponentProps) => {
   const rows = [
     { label: t("signal_status.band"), value: data?.band || "-" },
     { label: t("signal_status.arfcn"), value: data?.arfcn?.toString() ?? "-" },
+    {
+      label: t("signal_status.frequency"),
+      value:
+        data?.arfcn != null
+          ? formatFrequency(getDLFrequency(data.arfcn, "NR"))
+          : "-",
+    },
     { label: t("signal_status.pci"), value: data?.pci?.toString() ?? "-" },
     {
       label: t("signal_status.rsrp"),

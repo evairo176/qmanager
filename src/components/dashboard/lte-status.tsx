@@ -8,6 +8,7 @@ import {
   RSRQ_THRESHOLDS,
   SINR_THRESHOLDS,
 } from "@/types/modem-status";
+import { getDLFrequency, formatFrequency } from "@/lib/earfcn";
 
 interface LTEStatusComponentProps {
   data: LteStatus | null;
@@ -25,6 +26,13 @@ const LTEStatusComponent = ({ data, isLoading }: LTEStatusComponentProps) => {
   const rows = [
     { label: t("signal_status.band"), value: data?.band || "-" },
     { label: t("signal_status.earfcn"), value: data?.earfcn?.toString() ?? "-" },
+    {
+      label: t("signal_status.frequency"),
+      value:
+        data?.earfcn != null
+          ? formatFrequency(getDLFrequency(data.earfcn, "LTE"))
+          : "-",
+    },
     { label: t("signal_status.pci"), value: data?.pci?.toString() ?? "-" },
     {
       label: t("signal_status.rsrp"),
