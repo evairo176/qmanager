@@ -333,10 +333,25 @@ func activeScenarioID() string {
 		return "balanced"
 	}
 	id := strings.TrimSpace(string(data))
-	if id == "" {
+	if id == "" || !scenarioIDSafe(id) {
 		return "balanced"
 	}
 	return id
+}
+
+// scenarioIDSafe allows only plain scenario identifiers (letters, digits,
+// dash, underscore, dot) up to 64 chars — blocks path traversal and shell
+// injection when the id is persisted or echoed back.
+func scenarioIDSafe(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.') {
+			return false
+		}
+	}
+	return true
 }
 
 // findCustomScenario returns the custom scenario with the given id.
@@ -387,6 +402,14 @@ func (s *Server) HandleScenarioActivate(w http.ResponseWriter, r *http.Request) 
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ID == "" {
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": "missing_fields", "detail": "id is required"})
+		return
+	}
+
+	// SECURITY: scenario ids must be plain identifiers — reject anything with
+	// path separators / traversal / shell chars before it is persisted to
+	// /etc/qmanager/active_scenario (hardened after the traversal cleanup).
+	if !scenarioIDSafe(req.ID) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": "invalid_scenario_id"})
 		return
 	}
 

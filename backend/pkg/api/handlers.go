@@ -461,6 +461,12 @@ func (s *Server) HandleSystemSettings(w http.ResponseWriter, r *http.Request) {
 				hostname = strings.TrimSpace(n)
 				_ = qmWriteSection("settings", map[string]any{"hostname": hostname})
 			}
+			if action, ok := body["action"].(string); ok && action == "save_scheduled_reboot" {
+				enabled, _ := body["enabled"].(bool)
+				timeStr, _ := body["time"].(string)
+				days, _ := body["days"].([]any)
+				applyScheduledReboot(enabled, timeStr, days)
+			}
 		}
 	}
 
@@ -474,7 +480,119 @@ func (s *Server) HandleSystemSettings(w http.ResponseWriter, r *http.Request) {
 			"theme":         "dark",
 			"check_updates": true,
 		},
+		"scheduled_reboot": readScheduledRebootStatus(),
 	})
+}
+
+// timerUnit + dropIn paths (timer lives in /lib, overrides in writable /etc).
+const scheduledRebootTimer = "qmanager-scheduled-reboot.timer"
+const scheduledRebootDropIn = "/etc/systemd/system/qmanager-scheduled-reboot.timer.d/override.conf"
+
+var scheduledRebootDaysNames = []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
+
+// readScheduledRebootStatus returns {enabled, time, days} reflecting the
+// systemd timer state (active == enabled, OnCalendar == schedule).
+func readScheduledRebootStatus() map[string]interface{} {
+	enabled := false
+	if out, err := exec.Command("systemctl", "is-active", scheduledRebootTimer).Output(); err == nil {
+		enabled = strings.TrimSpace(string(out)) == "active"
+	}
+
+	// Default schedule mirrors the shipped unit: every day 04:00.
+	timeStr := "04:00"
+	days := []int{0, 1, 2, 3, 4, 5, 6}
+
+	unitPath := scheduledRebootDropIn
+	if _, err := os.Stat(unitPath); err != nil {
+		unitPath = "/lib/systemd/system/" + scheduledRebootTimer
+	}
+	if raw, err := os.ReadFile(unitPath); err == nil {
+		for _, line := range strings.Split(string(raw), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "OnCalendar=") {
+				spec := strings.TrimPrefix(line, "OnCalendar=")
+				if i := strings.LastIndex(spec, " "); i >= 0 {
+					hm := strings.TrimSpace(spec[i+1:])
+					if len(hm) >= 5 && hm[2] == ':' {
+						timeStr = hm[:5]
+					}
+					dayPart := strings.TrimSpace(spec[:i])
+					if dayPart != "" && dayPart != "*" && dayPart != "*-*-*" {
+						parsed := []int{}
+						for _, d := range strings.Split(dayPart, ",") {
+							d = strings.TrimSpace(d)
+							for idx, name := range scheduledRebootDaysNames {
+								if strings.EqualFold(d, name) {
+									parsed = append(parsed, idx)
+									break
+								}
+							}
+						}
+						if len(parsed) > 0 {
+							days = parsed
+						}
+					}
+				}
+				break
+			}
+		}
+	}
+
+	return map[string]interface{}{
+		"enabled": enabled,
+		"time":    timeStr,
+		"days":    days,
+	}
+}
+
+// applyScheduledReboot arms (enable+start) or disarms the systemd timer based
+// on the UI payload. OnCalendar is written as a drop-in override in /etc so it
+// survives the read-only rootfs layout of /lib.
+func applyScheduledReboot(enabled bool, timeStr string, days []any) {
+	// Normalize time to HH:MM (fallback 04:00).
+	hm := "04:00"
+	if len(timeStr) >= 5 && timeStr[2] == ':' {
+		hh := timeStr[:2]
+		mm := timeStr[3:5]
+		if hh >= "00" && hh <= "23" && mm >= "00" && mm <= "59" {
+			hm = timeStr[:5]
+		}
+	}
+
+	names := []string{}
+	for _, d := range days {
+		switch v := d.(type) {
+		case float64:
+			if int(v) >= 0 && int(v) <= 6 {
+				names = append(names, scheduledRebootDaysNames[int(v)])
+			}
+		case string:
+			for _, name := range scheduledRebootDaysNames {
+				if strings.EqualFold(name, v) {
+					names = append(names, name)
+					break
+				}
+			}
+		}
+	}
+	dayPart := strings.Join(names, ",")
+	if dayPart == "" {
+		dayPart = "*"
+	}
+
+	dropDir := "/etc/systemd/system/qmanager-scheduled-reboot.timer.d"
+	_ = os.MkdirAll(dropDir, 0o755)
+	content := "[Timer]\nOnCalendar=" + dayPart + " " + hm + ":00\n"
+	if err := os.WriteFile(scheduledRebootDropIn, []byte(content), 0o644); err != nil {
+		return
+	}
+	_ = exec.Command("systemctl", "daemon-reload").Run()
+
+	if enabled {
+		_ = exec.Command("systemctl", "enable", "--now", scheduledRebootTimer).Run()
+	} else {
+		_ = exec.Command("systemctl", "disable", "--now", scheduledRebootTimer).Run()
+	}
 }
 
 // HandleSIMSlot manages active SIM slot state
