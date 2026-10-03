@@ -6,6 +6,11 @@
     "monitoring": "Monitoring",
     "system": "Sistem"
   },
+  "search_menu": "Cari menu",
+  "search_menu_hint": "Ketik nama menu untuk langsung lompat ke halamannya",
+  "search_menu_placeholder": "Ketik nama menu atau URL...",
+  "search_menu_empty": "Tidak ada hasil.",
+  "search_menu_group": "Menu",
   "items": {
     "home": "Beranda",
     "cellular_information": "Informasi Seluler",

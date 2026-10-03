@@ -26,6 +26,7 @@ import {
 import QManagerLogo from "@/public/qmanager-logo.svg";
 
 import { AppSwitcher } from "@/components/app-switcher";
+import { MenuSearch, type MenuItem } from "@/components/menu-search";
 import { NavMain } from "@/components/nav-main";
 import { NavLocalNetwork } from "@/components/nav-localNetwork";
 import { NavSecondary } from "@/components/nav-secondary";
@@ -209,10 +210,41 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       : item,
   );
 
+  // Flat menu registry for the search palette (skips the donate button).
+  const menuItems: MenuItem[] = React.useMemo(() => {
+    type NavGroup = {
+      t_key: string;
+      url: string;
+      icon?: unknown;
+      items?: { t_key: string; url: string }[];
+    };
+    const groups: NavGroup[][] = [
+      data.navMain as NavGroup[],
+      data.cellular as NavGroup[],
+      data.localNetwork as NavGroup[],
+      data.monitoring as NavGroup[],
+      data.system as NavGroup[],
+      data.navSecondary
+        .filter((i) => i.t_key !== "donate")
+        .map((i) => ({ t_key: i.t_key, url: i.url })) as NavGroup[],
+    ];
+    const flat: MenuItem[] = [];
+    for (const group of groups) {
+      for (const item of group) {
+        flat.push({ t_key: item.t_key, url: item.url });
+        if (item.items) {
+          for (const sub of item.items) flat.push({ t_key: sub.t_key, url: sub.url });
+        }
+      }
+    }
+    return flat;
+  }, []);
+
   return (
     <Sidebar variant="inset" {...props}>
       <SidebarHeader>
         <AppSwitcher />
+        <MenuSearch items={menuItems} />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />

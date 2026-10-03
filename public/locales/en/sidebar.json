@@ -6,6 +6,11 @@
     "monitoring": "Monitoring",
     "system": "System"
   },
+  "search_menu": "Search menu",
+  "search_menu_hint": "Type a menu name to jump straight to it",
+  "search_menu_placeholder": "Type a menu name or URL...",
+  "search_menu_empty": "No results found.",
+  "search_menu_group": "Menus",
   "items": {
     "home": "Home",
     "cellular_information": "Cellular Information",
