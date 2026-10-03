@@ -358,18 +358,7 @@ func (p *Poller) pollOnce() {
 		"last_successful_poll": now,
 		"errors":               []string{},
 		"signal_per_antenna":   signalPerAntenna,
-		"network": map[string]interface{}{
-			"type":           netType,
-			"sim_slot":       simSlot,
-			"carrier":        carrier,
-			"service_status": serviceStatus,
-			"wan_ipv4":       wanIp,
-			"apn":            apn,
-			"primary_dns":    primaryDns,
-			"secondary_dns":  secondaryDns,
-			"ca_active":      false,
-			"ca_count":       0,
-		},
+		"network":         buildNetworkMap(netType, carrier, serviceStatus, wanIp, apn, primaryDns, secondaryDns, simSlot, p),
 		"lte": map[string]interface{}{
 			"state":     lteState,
 			"band":      lteBand,
@@ -919,6 +908,122 @@ func readQManagerVersion() string {
 		return qmanagerVersionFallback
 	}
 	return v
+}
+
+// collectCarrierComponents parses AT+QCAINFO into the per-carrier list shown
+// by the dashboard CA panel (PCC + every SCC, LTE and NR).
+func (p *Poller) collectCarrierComponents() []map[string]any {
+	out := []map[string]any{}
+	resp, err := p.atClient.Exec(`AT+QCAINFO`)
+	if err != nil || !strings.Contains(resp, "+QCAINFO:") {
+		return out
+	}
+	for _, line := range strings.Split(resp, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.Contains(line, "+QCAINFO:") {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) < 4 {
+			continue
+		}
+		role := ""
+		if strings.Contains(parts[0], "PCC") {
+			role = "PCC"
+		} else if strings.Contains(parts[0], "SCC") {
+			role = "SCC"
+		} else {
+			continue
+		}
+		bandField := strings.Trim(strings.TrimSpace(parts[3]), `"`)
+		tech := "LTE"
+		band := bandField
+		if strings.Contains(bandField, "NR5G") {
+			tech = "NR"
+			band = "N" + strings.TrimSpace(strings.TrimPrefix(bandField, "NR5G BAND "))
+		} else if strings.Contains(bandField, "LTE") {
+			band = "B" + strings.TrimSpace(strings.TrimPrefix(bandField, "LTE BAND "))
+		}
+
+		cc := map[string]any{
+			"type": role, "technology": tech, "band": band,
+			"earfcn": nil, "bandwidth_mhz": 0, "pci": nil,
+			"rsrp": nil, "rsrq": nil, "rssi": nil, "sinr": nil,
+		}
+		if v, e := strconv.Atoi(strings.TrimSpace(parts[1])); e == nil {
+			cc["earfcn"] = v
+		}
+		if v, e := strconv.Atoi(strings.TrimSpace(parts[2])); e == nil && tech == "LTE" {
+			cc["bandwidth_mhz"] = v / 5 // QCAINFO bandwidth = MHz*5
+		}
+
+		if tech == "LTE" {
+			// "PCC",earfcn,bandwidth,band,txrx,pci,rsrp,rsrq,rssi,sinr
+			if len(parts) > 5 {
+				if v, e := strconv.Atoi(strings.TrimSpace(parts[5])); e == nil {
+					cc["pci"] = v
+				}
+			}
+			if len(parts) > 6 {
+				if v, e := strconv.Atoi(strings.TrimSpace(parts[6])); e == nil {
+					cc["rsrp"] = v
+				}
+			}
+			if len(parts) > 7 {
+				if v, e := strconv.Atoi(strings.TrimSpace(parts[7])); e == nil {
+					cc["rsrq"] = v
+				}
+			}
+			if len(parts) > 8 {
+				if v, e := strconv.Atoi(strings.TrimSpace(parts[8])); e == nil {
+					cc["rssi"] = v
+				}
+			}
+			if len(parts) > 9 {
+				if v, e := strconv.Atoi(strings.TrimSpace(parts[9])); e == nil {
+					cc["sinr"] = v
+				}
+			}
+		} else {
+			// "SCC",arfcn,bandwidth,band,pci,rsrp,rsrq
+			if len(parts) > 4 {
+				if v, e := strconv.Atoi(strings.TrimSpace(parts[4])); e == nil {
+					cc["pci"] = v
+				}
+			}
+			if len(parts) > 5 {
+				if v, e := strconv.Atoi(strings.TrimSpace(parts[5])); e == nil {
+					cc["rsrp"] = v
+				}
+			}
+			if len(parts) > 6 {
+				if v, e := strconv.Atoi(strings.TrimSpace(parts[6])); e == nil {
+					cc["rsrq"] = v
+				}
+			}
+		}
+		out = append(out, cc)
+	}
+	return out
+}
+
+// buildNetworkMap assembles the status.json network section, including the CA
+// carrier component list (PCC + SCCs) and aggregation counters.
+func buildNetworkMap(netType, carrier, serviceStatus, wanIp, apn, primaryDns, secondaryDns string, simSlot int, p *Poller) map[string]any {
+	components := p.collectCarrierComponents()
+	m := map[string]any{
+		"type": netType, "sim_slot": simSlot, "carrier": carrier,
+		"service_status": serviceStatus, "wan_ipv4": wanIp, "apn": apn,
+		"primary_dns": primaryDns, "secondary_dns": secondaryDns,
+		"ca_active": len(components) >= 2,
+		"ca_count": 0,
+	}
+	if len(components) > 0 {
+		// 0-based count keeps the cockpit "Nx CA" display = total carriers.
+		m["ca_count"] = len(components) - 1
+	}
+	m["carrier_components"] = components
+	return m
 }
 
 func readLoadAvg() string {

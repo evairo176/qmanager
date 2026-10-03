@@ -34,7 +34,7 @@ const HomeComponent = () => {
 
   const networkType = data?.network?.type ?? "";
   const carrierComponents = data?.network?.carrier_components ?? [];
-  const hasScc = carrierComponents.some((c) => c.type === "SCC");
+  const hasCarriers = carrierComponents.length > 0;
 
   return (
     <div className="grid grid-cols-1 gap-6 @3xl/main:grid-cols-2 @5xl/main:grid-cols-5" aria-live="polite" aria-atomic="false">
@@ -54,7 +54,7 @@ const HomeComponent = () => {
           animate="visible"
         >
           {/* SA mode: SCC card on the left */}
-          {networkType === "5G-SA" && hasScc && (
+          {networkType === "5G-SA" && hasCarriers && (
             <motion.div variants={itemVariants} className="h-full *:data-[slot=card]:h-full">
               <SccStatusComponent carriers={carrierComponents} />
             </motion.div>
@@ -66,7 +66,7 @@ const HomeComponent = () => {
               variants={itemVariants}
               className={cn(
                 "h-full *:data-[slot=card]:h-full",
-                networkType === "LTE" && !hasScc && "@3xl/main:col-span-2",
+                networkType === "LTE" && !hasCarriers && "@3xl/main:col-span-2",
               )}
             >
               <LTEStatusComponent
@@ -82,7 +82,7 @@ const HomeComponent = () => {
               variants={itemVariants}
               className={cn(
                 "h-full *:data-[slot=card]:h-full",
-                networkType === "5G-SA" && !hasScc && "@3xl/main:col-span-2",
+                networkType === "5G-SA" && !hasCarriers && "@3xl/main:col-span-2",
               )}
             >
               <NrStatusComponent
@@ -93,7 +93,7 @@ const HomeComponent = () => {
           )}
 
           {/* LTE mode: SCC card on the right */}
-          {networkType === "LTE" && hasScc && (
+          {networkType === "LTE" && hasCarriers && (
             <motion.div variants={itemVariants} className="h-full *:data-[slot=card]:h-full">
               <SccStatusComponent carriers={carrierComponents} />
             </motion.div>

@@ -8,6 +8,7 @@ import { FaCircle } from "react-icons/fa6";
 import { useTranslation } from "react-i18next";
 import type { CarrierComponent } from "@/types/modem-status";
 import { RSRP_THRESHOLDS, getSignalQuality } from "@/types/modem-status";
+import { getDLFrequency, formatFrequency } from "@/lib/earfcn";
 import {
   listVariants,
   rowVariants,
@@ -19,15 +20,14 @@ interface SccStatusProps {
 }
 
 const SccStatusComponent = ({ carriers }: SccStatusProps) => {
-  const sccCarriers = carriers.filter((c) => c.type === "SCC");
+  const { t } = useTranslation("dashboard");
   // Count every active carrier (PCC + SCCs) and aggregate bandwidth across all
   // of them — the summary reflects the full carrier aggregation, while the row
-  // list below stays scoped to the secondary carriers.
+  // list below covers every carrier (PCC included).
   const totalBw = carriers.reduce(
     (sum, c) => sum + (c.bandwidth_mhz || 0),
     0,
   );
-  const { t } = useTranslation("dashboard");
 
   return (
     <Card>
@@ -67,9 +67,15 @@ const SccStatusComponent = ({ carriers }: SccStatusProps) => {
             initial="hidden"
             animate="visible"
           >
-            {sccCarriers.map((carrier, index) => {
+            {carriers.map((carrier, index) => {
               const quality = getSignalQuality(carrier.rsrp, RSRP_THRESHOLDS);
               const rsrpColor = getValueColorClass(quality);
+              const dlFreq =
+                carrier.earfcn != null
+                  ? formatFrequency(
+                      getDLFrequency(carrier.earfcn, carrier.technology),
+                    )
+                  : "—";
 
               return (
                 <motion.div
@@ -78,9 +84,25 @@ const SccStatusComponent = ({ carriers }: SccStatusProps) => {
                   transition={{ duration: 0.25, ease: "easeOut" }}
                   className="flex items-center justify-between py-2"
                 >
-                  <dt className="flex items-center gap-2">
+                  <dt className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant={
+                        carrier.type === "PCC" ? "default" : "outline"
+                      }
+                      className="text-[10px]"
+                    >
+                      {carrier.type}
+                    </Badge>
                     <span className="font-semibold text-sm">
                       {carrier.band}
+                    </span>
+                    {carrier.bandwidth_mhz > 0 && (
+                      <span className="text-muted-foreground text-xs tabular-nums">
+                        {carrier.bandwidth_mhz} MHz
+                      </span>
+                    )}
+                    <span className="text-muted-foreground text-xs tabular-nums">
+                      {carrier.earfcn ?? "—"} · {dlFreq}
                     </span>
                     <span className="text-muted-foreground text-sm tabular-nums">
                       ({carrier.pci ?? "-"})

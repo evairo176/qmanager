@@ -169,7 +169,7 @@
     "run_again_button": "Run Again"
   },
   "scc": {
-    "title": "Secondary Carriers",
+    "title": "Active Carriers",
     "heading": "Carrier Aggregation",
     "active_carriers_one": "{{count}} active carrier",
     "active_carriers_other": "{{count}} active carriers"
