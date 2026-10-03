@@ -18,9 +18,21 @@ export function CockpitHero({ data, isLoading }: CockpitHeroProps) {
   const carrier = data?.network?.carrier || "Unknown Network";
   const wanIp = data?.network?.wan_ipv4 || null;
   const caActive = data?.network?.ca_active;
-  const caCount = (data?.network?.ca_count || 0) + 1;
-  // Aggregated bandwidth comes from the LTE PCC bandwidth in MHz.
-  const totalBw = data?.lte?.bandwidth ?? 0;
+  // Count & bandwidth come from the real CA carrier list when available, so the
+  // hero matches the Active Carriers panel (e.g. 3x CA, LTE 35 MHz total).
+  const carrierComps = data?.network?.carrier_components ?? [];
+  const caCount =
+    carrierComps.length > 0
+      ? carrierComps.length
+      : (data?.network?.ca_count || 0) + 1;
+  // Aggregated bandwidth = sum of LTE component bandwidths (NR bw unknown).
+  const totalBw =
+    carrierComps.length > 0
+      ? carrierComps.reduce(
+          (sum, c) => sum + (c.bandwidth_mhz || 0),
+          0,
+        )
+      : (data?.lte?.bandwidth ?? 0);
 
   const latency = data?.connectivity?.latency_ms;
   const packetLoss = data?.connectivity?.packet_loss_pct ?? 0;
