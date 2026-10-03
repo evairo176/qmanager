@@ -409,7 +409,7 @@ func (p *Poller) pollOnce() {
 			"apn":                      apn,
 			"phone_number":             phoneNumber,
 			"build_date":               buildDate,
-			"qmanager_version":         "v0.2.4",
+			"qmanager_version":         readQManagerVersion(),
 			"lte_category":             "Cat-20",
 			"mimo":                     "4x4",
 			"supported_lte_bands":      "1:3:5:7:8:20:28:38:40:41:42:43",
@@ -902,6 +902,25 @@ func parseQuectelQENG(resp string, netType, serviceStatus, carrier, lteBand *str
 
 // readLoadAvg returns the 1/5/15-minute load averages from /proc/loadavg as
 // a string like "2.33 2.38 2.45", or "" if unreadable.
+// qmanagerVersionFile is written by the installer; fallback keeps a sane default.
+const qmanagerVersionFile = "/etc/qmanager/VERSION"
+
+var qmanagerVersionFallback = "v1.1.0"
+
+// readQManagerVersion returns the running QManager version from the version file
+// written by install.sh (/etc/qmanager/VERSION), falling back to v1.1.0.
+func readQManagerVersion() string {
+	raw, err := os.ReadFile(qmanagerVersionFile)
+	if err != nil {
+		return qmanagerVersionFallback
+	}
+	v := strings.TrimSpace(string(raw))
+	if v == "" {
+		return qmanagerVersionFallback
+	}
+	return v
+}
+
 func readLoadAvg() string {
 	data, err := os.ReadFile("/proc/loadavg")
 	if err != nil {
