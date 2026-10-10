@@ -48,23 +48,28 @@ func main() {
 	watchdog := daemon.NewWatchdog("1.1.1.1", 30*time.Second, 3)
 	watchdog.SetRecoveryFunc(func(fails int) {
 		// Tiered recovery:
-		//  - fails >= 3: soft radio reset via AT+CFUN=0/1 (no reboot, keeps session)
-		//  - fails >= 8: hard reboot (radio reset did not help, ~4 min offline)
-		isHard := fails >= 8
+		//  - fails >= 3: data-session refresh penuh (COPS detach + CFUN radio reset + PDP reactivate).
+		//    CFUN doang TIDAK cukup pas provider refresh IP (Smartfren): PDP lama masih nyangkut,
+		//    modem balik "registered" tapi tanpa data path -> LOS tetap.
+		//  - fails >= 7: hard reboot (soft refresh gagal, ~3.5 min offline).
+		isHard := fails >= 7
 		log.Printf("[Watchdog] RECOVERY: consecutive fails=%d -> %s", fails,
-			map[bool]string{true: "HARD REBOOT", false: "soft radio reset (AT+CFUN=0/1)"}[isHard])
+			map[bool]string{true: "HARD REBOOT", false: "soft: COPS detach + CFUN 0/1 + PDP reactivate"}[isHard])
 		daemon.RecordWatchcatEvent(isHard, fmt.Sprintf("%d consecutive ping failures", fails))
 		if isHard {
 			_ = exec.Command("/bin/sh", "-c", "sync; (sleep 2; busybox reboot -f) >/dev/null 2>&1 &").Start()
 			return
 		}
-		// SOFT: AT+CFUN=0 then AT+CFUN=1 with a short delay — re-registers the
-		// radio and typically regains IP without a full reboot.
-		if _, err := atClient.Exec("AT+CFUN=0"); err == nil {
-			time.Sleep(3 * time.Second)
-			_, _ = atClient.Exec("AT+CFUN=1")
-			time.Sleep(5 * time.Second)
-		}
+		// SOFT: detach dari network dulu, baru radio reset, lalu pastikan PDP aktif.
+		// Urutan ini memaksa re-register + dapat PDP/IP BARU dari provider.
+		_, _ = atClient.Exec("AT+COPS=2")      // detach (lepas dari network)
+		time.Sleep(2 * time.Second)
+		_, _ = atClient.Exec("AT+CFUN=0")      // radio off
+		time.Sleep(4 * time.Second)
+		_, _ = atClient.Exec("AT+CFUN=1")      // radio on -> auto attach (COPS default 0)
+		time.Sleep(12 * time.Second)           // cukup untuk re-register + re-activate data
+		_, _ = atClient.Exec("AT+CGACT=1,1")   // pastikan default PDP context aktif (id 1)
+		time.Sleep(5 * time.Second)
 	})
 	watchdog.Start()
 	log.Println("[Daemon] Background Watchdog started (30s interval, target 1.1.1.1)")
