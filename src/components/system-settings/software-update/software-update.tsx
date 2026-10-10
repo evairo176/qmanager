@@ -34,6 +34,7 @@ import type { UpdateStatus } from "@/hooks/use-software-update";
 import { toast } from "sonner";
 import { UpdateStatusCard } from "./update-status-card";
 import { UpdatePreferencesCard } from "./update-preferences-card";
+import { ManualUpdateCard } from "./manual-update-card";
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
 
@@ -388,6 +389,7 @@ const SoftwareUpdateComponent = () => {
           saveAutoUpdate={hookData.saveAutoUpdate}
         />
       </div>
+      <ManualUpdateCard />
     </PageWrapper>
   );
 };

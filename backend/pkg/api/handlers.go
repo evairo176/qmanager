@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"os"
@@ -132,6 +133,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	// System Management & Update Routes — Auth Required
 	mux.HandleFunc("/cgi-bin/quecmanager/system/ssh_password.sh", RequireAuth(s.HandleSSHPassword))
 	mux.HandleFunc("/cgi-bin/quecmanager/system/update.sh", RequireAuth(s.HandleSoftwareUpdate))
+	mux.HandleFunc("/cgi-bin/quecmanager/system/update_upload.sh", RequireAuth(s.HandleSoftwareUpdateUpload))
 	mux.HandleFunc("/cgi-bin/quecmanager/system/pending_reboot.sh", RequireAuth(s.HandlePendingReboot))
 	mux.HandleFunc("/cgi-bin/quecmanager/system/known_sims.sh", RequireAuth(s.HandleKnownSims))
 	mux.HandleFunc("/cgi-bin/quecmanager/cellular/fplmn.sh", RequireAuth(s.HandleFPLMN))
@@ -909,6 +911,67 @@ func (s *Server) HandleSoftwareUpdate(w http.ResponseWriter, r *http.Request) {
 		"current_version":  "v1.0.2",
 		"latest_version":   "v1.0.2",
 		"update_available": false,
+	})
+}
+
+// HandleSoftwareUpdateUpload — Manual Update via file upload (tar.gz).
+// Menerima multipart field "file" berisi qmanager-core-armv7.tar.gz,
+// ekstrak binary, ganti /usrdata/qmanager/qmanager-core, restart service.
+// Dipakai biar update bisa lewat UI (HP/desktop) tanpa SSH.
+func (s *Server) HandleSoftwareUpdateUpload(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Use POST with multipart file"})
+		return
+	}
+	if err := r.ParseMultipartForm(192 << 20); err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Invalid multipart: " + err.Error()})
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Field 'file' required"})
+		return
+	}
+	defer file.Close()
+
+	const uploadTmp = "/tmp/qmanager_upload.tar.gz"
+	out, err := os.Create(uploadTmp)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Cannot write upload: " + err.Error()})
+		return
+	}
+	if _, err := io.Copy(out, file); err != nil {
+		out.Close()
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": "Upload failed: " + err.Error()})
+		return
+	}
+	out.Close()
+
+	script := `rm -rf /tmp/qmanager_extract_tmp && mkdir -p /tmp/qmanager_extract_tmp && ` +
+		`tar -xzf /tmp/qmanager_upload.tar.gz -C /tmp/qmanager_extract_tmp && ` +
+		`BIN=$(find /tmp/qmanager_extract_tmp -type f -name 'qmanager-core*' | head -1) && ` +
+		`[ -n "$BIN" ] && ` +
+		`cp "$BIN" /usrdata/qmanager/qmanager-core.new && ` +
+		`chmod 0755 /usrdata/qmanager/qmanager-core.new && ` +
+		`mv -f /usrdata/qmanager/qmanager-core.new /usrdata/qmanager/qmanager-core && ` +
+		`[ -d /tmp/qmanager_extract_tmp/web ] && rm -rf /usrdata/qmanager/web && ` +
+		`cp -r /tmp/qmanager_extract_tmp/web /usrdata/qmanager/web && ` +
+		`[ -f /tmp/qmanager_extract_tmp/VERSION ] && cp /tmp/qmanager_extract_tmp/VERSION /etc/qmanager/VERSION && ` +
+		`sync && systemctl restart qmanager-core && echo OK || echo FAIL`
+
+	combined, err := exec.Command("/bin/sh", "-c", script).CombinedOutput()
+	msg := strings.TrimSpace(string(combined))
+	if err != nil || strings.Contains(msg, "FAIL") {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Install gagal: " + msg,
+		})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Update installed. Service restarting…",
 	})
 }
 
