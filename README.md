@@ -533,6 +533,76 @@ QManager Go Edition maintains 100% route compatibility with legacy CGI endpoints
 
 ---
 
+## 🗑️ Uninstall Lengkap (Full Uninstall)
+
+Hapus QManager sepenuhnya dari modem, termasuk binary, web, daemon,
+config, dan autostart. Jalankan via SSH root (`192.168.225.1`, pass `admin321`).
+
+### 0. (Opsional) Backup dulu
+
+```bash
+sshpass -p admin321 ssh root@192.168.225.1 \
+  'mkdir -p /tmp/qmanager-backup && \
+   cp -r /usrdata/qmanager /tmp/qmanager-backup/ 2>/dev/null; \
+   cp -r /etc/qmanager /tmp/qmanager-backup/ 2>/dev/null; \
+   echo backup selesai - ambil dari /tmp/qmanager-backup'
+```
+
+### 1. Stop & disable service
+
+```bash
+sshpass -p admin321 ssh root@192.168.225.1 \
+  'systemctl stop qmanager-core; \
+   systemctl disable qmanager-core; \
+   rm -f /lib/systemd/system/qmanager-core.service \
+         /lib/systemd/system/multi-user.target.wants/qmanager-core.service \
+         /etc/systemd/system/qmanager-core.service \
+         /etc/systemd/system/multi-user.target.wants/qmanager-core.service \
+         /etc/init.d/qmanager-core /lib/qmanager-start.sh; \
+   systemctl daemon-reload; \
+   echo service dihapus'
+```
+
+### 2. Hapus binary, web, daemon bantu
+
+```bash
+sshpass -p admin321 ssh root@192.168.225.1 \
+  'rm -rf /usrdata/qmanager; \
+   rm -f /usr/bin/qmanager_poller /usr/bin/qmanager_watchcat /usr/bin/qmanager_ping \
+         /usr/bin/qmanager_poller.bak /usr/bin/qmanager_watchcat.bak; \
+   echo file aplikasi dihapus'
+```
+
+### 3. Hapus config & auth (sekalian TLS cert)
+
+```bash
+sshpass -p admin321 ssh root@192.168.225.1 \
+  'rm -rf /etc/qmanager; \
+   echo config dihapus'
+```
+
+### 4. Bersihkan sisa (iptables + state)
+
+```bash
+sshpass -p admin321 ssh root@192.168.225.1 \
+  'iptables -D INPUT -p tcp --dport 80 -j DROP 2>/dev/null; \
+   iptables -D INPUT -p tcp --dport 443 -j DROP 2>/dev/null; \
+   rm -f /tmp/qmanager_*.json /tmp/qmanager_*.txt; \
+   echo cleanup selesai'
+```
+
+### 5. (Opsional) Reboot biar 100% bersih
+
+```bash
+sshpass -p admin321 ssh root@192.168.225.1 'sync; reboot'
+```
+
+> ⚠️ Setelah uninstall, port 80/443 modem kosong - kalau mau balikin ke
+> QManager versi lama (lighttpd + CGI), jalankan `systemctl unmask lighttpd`
+> lalu start lighttpd; atau install ulang saja dari repo ini.
+
+---
+
 ## 💙 License & Acknowledgments
 
 This project is licensed under the **[MIT License with Commons Clause](LICENSE)**.
