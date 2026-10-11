@@ -73,12 +73,26 @@ func (w *Watchdog) SetRecoveryFunc(fn func(fails int)) {
 }
 
 func (w *Watchdog) defaultPing(host string) bool {
+	// Multi-target: cek dua host sekaligus (1.1.1.1 + 8.8.8.8).
+	// Satu host aja yang mati (blackhole isp) gak boleh dianggap LOS.
+	hosts := []string{host}
+	if host != "8.8.8.8" {
+		hosts = append(hosts, "8.8.8.8")
+	}
+	for _, h := range hosts {
+		if w.pingOne(h) {
+			return true
+		}
+	}
+	return false
+}
+
+func (w *Watchdog) pingOne(host string) bool {
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, "53"), 3*time.Second)
 	if err == nil {
 		_ = conn.Close()
 		return true
 	}
-	// Fallback to HTTP port 80 check if port 53 dial failed
 	connHTTP, errHTTP := net.DialTimeout("tcp", net.JoinHostPort(host, "80"), 3*time.Second)
 	if errHTTP == nil {
 		_ = connHTTP.Close()

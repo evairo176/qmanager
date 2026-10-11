@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -45,22 +46,39 @@ func main() {
 	log.Println("[Daemon] Background Status Poller started (10s interval)")
 
 	// Start Background Watchdog Daemon (monitors connectivity natively)
-	// v1.5.2: reconnect CEPAT. Probe tiap 15s, soft recover setelah 2 gagal,
-	// hard reboot setelah 5 gagal (~3 menit worst case, bukan 30 menit).
+	// v1.5.3: fix komprehensif auto-reconnect.
+	//  - probe 15s, multi-host (1.1.1.1 + 8.8.8.8 via defaultPing)
+	//  - soft recover di 2 gagal, hard reboot di 5 gagal
+	//  - single-flight (recovery gak numpuk - sebelumnya `go recoveryFunc`
+	//    tiap tick bisa jalanin CFUN barengan = chaos lambat)
+	//  - cooldown 90s antar hard reboot
 	watchdog := daemon.NewWatchdog("1.1.1.1", 15*time.Second, 2)
+	var (
+		recovering    atomic.Bool
+		lastHardReboot time.Time
+	)
 	watchdog.SetRecoveryFunc(func(fails int) {
-		// Tiered recovery:
-		//  - fails >= 2: soft data-session refresh (COPS detach + CFUN 0/1 + PDP reactivate)
-		//  - fails >= 5: hard reboot (soft gagal berulang, ~2-3 min offline max)
-		isHard := fails >= 5
-		log.Printf("[Watchdog] RECOVERY: consecutive fails=%d -> %s", fails,
-			map[bool]string{true: "HARD REBOOT", false: "soft: COPS detach + CFUN 0/1 + PDP reactivate"}[isHard])
-		daemon.RecordWatchcatEvent(isHard, fmt.Sprintf("%d consecutive ping failures", fails))
-		if isHard {
+		if !recovering.CompareAndSwap(false, true) {
+			return // recovery udah jalan, gak boleh numpuk
+		}
+		defer recovering.Store(false)
+
+		// Hard reboot: kasih cooldown 90s biar gak reboot-storm.
+		if fails >= 5 {
+			if time.Since(lastHardReboot) < 90*time.Second {
+				log.Printf("[Watchdog] RECOVERY: hard reboot ditahan (cooldown 90s), fails=%d", fails)
+				return
+			}
+			lastHardReboot = time.Now()
+			log.Printf("[Watchdog] RECOVERY: consecutive fails=%d -> HARD REBOOT", fails)
+			daemon.RecordWatchcatEvent(true, fmt.Sprintf("%d consecutive ping failures", fails))
 			_ = exec.Command("/bin/sh", "-c", "sync; (sleep 2; busybox reboot -f) >/dev/null 2>&1 &").Start()
 			return
 		}
-		// SOFT: detach dulu, radio reset, pastikan PDP aktif -> dapat IP/PDP BARU.
+
+		// SOFT: COPS detach + CFUN radio reset + PDP reactivate.
+		log.Printf("[Watchdog] RECOVERY: consecutive fails=%d -> soft (COPS detach + CFUN 0/1 + PDP)", fails)
+		daemon.RecordWatchcatEvent(false, fmt.Sprintf("%d consecutive ping failures", fails))
 		_, _ = atClient.Exec("AT+COPS=2")
 		time.Sleep(2 * time.Second)
 		_, _ = atClient.Exec("AT+CFUN=0")
@@ -71,7 +89,7 @@ func main() {
 		time.Sleep(5 * time.Second)
 	})
 	watchdog.Start()
-	log.Println("[Daemon] Background Watchdog started (15s interval, target 1.1.1.1, fast recover)")
+	log.Println("[Daemon] Background Watchdog started (15s interval, multi-host, fast & single-flight)")
 
 	// Register API Routes
 	server := api.NewServer(atClient)
