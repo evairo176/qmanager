@@ -45,14 +45,14 @@ func main() {
 	log.Println("[Daemon] Background Status Poller started (10s interval)")
 
 	// Start Background Watchdog Daemon (monitors connectivity natively)
-	watchdog := daemon.NewWatchdog("1.1.1.1", 30*time.Second, 3)
+	// v1.5.2: reconnect CEPAT. Probe tiap 15s, soft recover setelah 2 gagal,
+	// hard reboot setelah 5 gagal (~3 menit worst case, bukan 30 menit).
+	watchdog := daemon.NewWatchdog("1.1.1.1", 15*time.Second, 2)
 	watchdog.SetRecoveryFunc(func(fails int) {
 		// Tiered recovery:
-		//  - fails >= 3: data-session refresh penuh (COPS detach + CFUN radio reset + PDP reactivate).
-		//    CFUN doang TIDAK cukup pas provider refresh IP (Smartfren): PDP lama masih nyangkut,
-		//    modem balik "registered" tapi tanpa data path -> LOS tetap.
-		//  - fails >= 7: hard reboot (soft refresh gagal, ~3.5 min offline).
-		isHard := fails >= 7
+		//  - fails >= 2: soft data-session refresh (COPS detach + CFUN 0/1 + PDP reactivate)
+		//  - fails >= 5: hard reboot (soft gagal berulang, ~2-3 min offline max)
+		isHard := fails >= 5
 		log.Printf("[Watchdog] RECOVERY: consecutive fails=%d -> %s", fails,
 			map[bool]string{true: "HARD REBOOT", false: "soft: COPS detach + CFUN 0/1 + PDP reactivate"}[isHard])
 		daemon.RecordWatchcatEvent(isHard, fmt.Sprintf("%d consecutive ping failures", fails))
@@ -60,19 +60,18 @@ func main() {
 			_ = exec.Command("/bin/sh", "-c", "sync; (sleep 2; busybox reboot -f) >/dev/null 2>&1 &").Start()
 			return
 		}
-		// SOFT: detach dari network dulu, baru radio reset, lalu pastikan PDP aktif.
-		// Urutan ini memaksa re-register + dapat PDP/IP BARU dari provider.
-		_, _ = atClient.Exec("AT+COPS=2")      // detach (lepas dari network)
+		// SOFT: detach dulu, radio reset, pastikan PDP aktif -> dapat IP/PDP BARU.
+		_, _ = atClient.Exec("AT+COPS=2")
 		time.Sleep(2 * time.Second)
-		_, _ = atClient.Exec("AT+CFUN=0")      // radio off
+		_, _ = atClient.Exec("AT+CFUN=0")
 		time.Sleep(4 * time.Second)
-		_, _ = atClient.Exec("AT+CFUN=1")      // radio on -> auto attach (COPS default 0)
-		time.Sleep(12 * time.Second)           // cukup untuk re-register + re-activate data
-		_, _ = atClient.Exec("AT+CGACT=1,1")   // pastikan default PDP context aktif (id 1)
+		_, _ = atClient.Exec("AT+CFUN=1")
+		time.Sleep(12 * time.Second)
+		_, _ = atClient.Exec("AT+CGACT=1,1")
 		time.Sleep(5 * time.Second)
 	})
 	watchdog.Start()
-	log.Println("[Daemon] Background Watchdog started (30s interval, target 1.1.1.1)")
+	log.Println("[Daemon] Background Watchdog started (15s interval, target 1.1.1.1, fast recover)")
 
 	// Register API Routes
 	server := api.NewServer(atClient)
