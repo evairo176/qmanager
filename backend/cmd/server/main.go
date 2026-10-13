@@ -46,16 +46,18 @@ func main() {
 	log.Println("[Daemon] Background Status Poller started (10s interval)")
 
 	// Start Background Watchdog Daemon (monitors connectivity natively)
-	// v1.5.3: fix komprehensif auto-reconnect.
+	// v1.5.4: fix "15 menit baru konek" - watchdog over-escalation.
 	//  - probe 15s, multi-host (1.1.1.1 + 8.8.8.8 via defaultPing)
-	//  - soft recover di 2 gagal, hard reboot di 5 gagal
-	//  - single-flight (recovery gak numpuk - sebelumnya `go recoveryFunc`
-	//    tiap tick bisa jalanin CFUN barengan = chaos lambat)
-	//  - cooldown 90s antar hard reboot
+	//  - soft recover di 2 gagal, TAPI soft backoff 180s (jangan spam CFUN -
+	//    modem butuh waktu tenang buat re-attach sendiri abis provider refresh IP)
+	//  - hard reboot BARU di 10 gagal (~2.5 menit LOS beneran) + cooldown 300s:
+	//    refresh IP biasa (30-60s) gak akan pernah kena reboot
+	//  - single-flight (recovery gak numpuk)
 	watchdog := daemon.NewWatchdog("1.1.1.1", 15*time.Second, 2)
 	var (
-		recovering    atomic.Bool
-		lastHardReboot time.Time
+		recovering      atomic.Bool
+		lastHardReboot  time.Time
+		lastSoftRecover time.Time
 	)
 	watchdog.SetRecoveryFunc(func(fails int) {
 		if !recovering.CompareAndSwap(false, true) {
@@ -63,10 +65,10 @@ func main() {
 		}
 		defer recovering.Store(false)
 
-		// Hard reboot: kasih cooldown 90s biar gak reboot-storm.
-		if fails >= 5 {
-			if time.Since(lastHardReboot) < 90*time.Second {
-				log.Printf("[Watchdog] RECOVERY: hard reboot ditahan (cooldown 90s), fails=%d", fails)
+		// Hard reboot: cuma LOS beneran, cooldown 300s biar gak reboot-storm.
+		if fails >= 10 {
+			if time.Since(lastHardReboot) < 300*time.Second {
+				log.Printf("[Watchdog] RECOVERY: hard reboot ditahan (cooldown 300s), fails=%d", fails)
 				return
 			}
 			lastHardReboot = time.Now()
@@ -75,6 +77,15 @@ func main() {
 			_ = exec.Command("/bin/sh", "-c", "sync; (sleep 2; busybox reboot -f) >/dev/null 2>&1 &").Start()
 			return
 		}
+
+		// SOFT backoff 180s: setelah 1x soft recovery, kasih waktu 3 menit buat
+		// modem settle / re-attach sendiri. Dulu soft jalan tiap tick pas masih
+		// fails>=2 → CFUN spam → malah ngeganggu recovery natural = 15 menit.
+		if time.Since(lastSoftRecover) < 180*time.Second {
+			log.Printf("[Watchdog] RECOVERY: soft ditahan (backoff 180s), fails=%d - ngasih modem waktu recover sendiri", fails)
+			return
+		}
+		lastSoftRecover = time.Now()
 
 		// SOFT: COPS detach + CFUN radio reset + PDP reactivate.
 		log.Printf("[Watchdog] RECOVERY: consecutive fails=%d -> soft (COPS detach + CFUN 0/1 + PDP)", fails)
@@ -89,7 +100,7 @@ func main() {
 		time.Sleep(5 * time.Second)
 	})
 	watchdog.Start()
-	log.Println("[Daemon] Background Watchdog started (15s interval, multi-host, fast & single-flight)")
+	log.Println("[Daemon] Background Watchdog started (15s interval, multi-host, soft backoff 180s, hard reboot @10 fails + cooldown 300s)")
 
 	// Register API Routes
 	server := api.NewServer(atClient)
