@@ -948,17 +948,31 @@ func (s *Server) HandleSoftwareUpdateUpload(w http.ResponseWriter, r *http.Reque
 	}
 	out.Close()
 
-	script := `rm -rf /tmp/qmanager_extract_tmp && mkdir -p /tmp/qmanager_extract_tmp && ` +
-		`tar -xzf /tmp/qmanager_upload.tar.gz -C /tmp/qmanager_extract_tmp && ` +
-		`BIN=$(find /tmp/qmanager_extract_tmp -type f -name 'qmanager-core*' | head -1) && ` +
-		`[ -n "$BIN" ] && ` +
-		`cp "$BIN" /usrdata/qmanager/qmanager-core.new && ` +
-		`chmod 0755 /usrdata/qmanager/qmanager-core.new && ` +
-		`mv -f /usrdata/qmanager/qmanager-core.new /usrdata/qmanager/qmanager-core && ` +
-		`[ -d /tmp/qmanager_extract_tmp/web ] && rm -rf /usrdata/qmanager/web && ` +
-		`cp -r /tmp/qmanager_extract_tmp/web /usrdata/qmanager/web && ` +
-		`[ -f /tmp/qmanager_extract_tmp/VERSION ] && cp /tmp/qmanager_extract_tmp/VERSION /etc/qmanager/VERSION && ` +
-		`sync && systemctl restart qmanager-core && echo OK || echo FAIL`
+	// v1.5.5: handler update robust - tiap step error jelas, VERSION/web opsional
+	// (gak bikin chain && putus jadi FAIL generik). Upload file apa aja akan
+	// dikasih tau persis kenapa gagal.
+	script := `set -u
+rm -rf /tmp/qmanager_extract_tmp && mkdir -p /tmp/qmanager_extract_tmp
+if ! tar -xzf /tmp/qmanager_upload.tar.gz -C /tmp/qmanager_extract_tmp 2>/dev/null; then
+  echo "FAIL: arsip bukan .tar.gz valid / korup - upload qmanager-update-vX.Y.Z.tar.gz"
+  exit 0
+fi
+BIN=$(find /tmp/qmanager_extract_tmp -type f -name 'qmanager-core*' | head -1)
+if [ -z "$BIN" ]; then
+  echo "FAIL: qmanager-core tidak ada di arsip - upload qmanager-update-*.tar.gz, jangan binary doang"
+  exit 0
+fi
+cp "$BIN" /usrdata/qmanager/qmanager-core.new || { echo "FAIL: copy binary gagal (cek ruang /usrdata)"; exit 0; }
+chmod 0755 /usrdata/qmanager/qmanager-core.new
+mv -f /usrdata/qmanager/qmanager-core.new /usrdata/qmanager/qmanager-core || { echo "FAIL: replace binary gagal (sedang dipakai?)"; exit 0; }
+if [ -d /tmp/qmanager_extract_tmp/web ]; then
+  rm -rf /usrdata/qmanager/web
+  cp -r /tmp/qmanager_extract_tmp/web /usrdata/qmanager/web || { echo "FAIL: copy web gagal (cek ruang)"; exit 0; }
+fi
+[ -f /tmp/qmanager_extract_tmp/VERSION ] && cp /tmp/qmanager_extract_tmp/VERSION /etc/qmanager/VERSION
+sync
+if systemctl restart qmanager-core; then echo OK; else echo "FAIL: restart service gagal"; fi
+exit 0`
 
 	combined, err := exec.Command("/bin/sh", "-c", script).CombinedOutput()
 	msg := strings.TrimSpace(string(combined))
