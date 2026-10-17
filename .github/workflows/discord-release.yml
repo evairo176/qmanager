@@ -25,6 +25,12 @@ jobs:
           # Discord embed description limit: 4096 chars.
           # -------------------------------------------------------------------
 
+          # --- Guard: secret belum diset -> skip (jangan gagalkan run) ---
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "::warning::Secret DISCORD_WEBHOOK_URL belum diset di repo settings - Discord notification di-skip."
+            exit 0
+          fi
+
           # --- Markdown transformations for Discord ---
           BODY="$RELEASE_BODY"
 
