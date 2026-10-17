@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -20,6 +22,29 @@ import (
 	"qmanager-backend/pkg/tlsgen"
 	"qmanager-backend/web"
 )
+
+// serveWithPortRetry - v1.5.6: kalau port 80/443 udah dipegang proses lain
+// (lighttpd legacy yang muncul lagi abis reboot modem), bunuh lighttpd lalu
+// coba bind ulang. Sebelumnya web mati abis reboot sampai user SSH restart.
+func serveWithPortRetry(srv *http.Server, tlsCert, tlsKey string) error {
+	addr := srv.Addr
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		if strings.Contains(err.Error(), "address already in use") {
+			log.Printf("[Bind] Port %s dipakai proses lain - kill lighttpd legacy, retry...", addr)
+			_ = exec.Command("/bin/sh", "-c", "killall lighttpd 2>/dev/null; sleep 1").Run()
+			ln, err = net.Listen("tcp", addr)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	log.Printf("QManager Go Backend listening on %s", addr)
+	if tlsCert != "" {
+		return srv.ServeTLS(ln, tlsCert, tlsKey)
+	}
+	return srv.Serve(ln)
+}
 
 func main() {
 	port := os.Getenv("PORT")
@@ -161,7 +186,7 @@ func main() {
 				Handler: mux,
 			}
 			go func() {
-				if err := tlsServer.ListenAndServeTLS(certPath, keyPath); err != nil && err != http.ErrServerClosed {
+				if err := serveWithPortRetry(tlsServer, certPath, keyPath); err != nil && err != http.ErrServerClosed {
 					log.Printf("[TLS] HTTPS server stopped: %v", err)
 				}
 			}()
@@ -173,8 +198,7 @@ func main() {
 	signal.Notify(stopChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("QManager Go Backend listening on HTTP port %s\n", port)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := serveWithPortRetry(httpServer, "", ""); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed to start: %v", err)
 		}
 	}()
